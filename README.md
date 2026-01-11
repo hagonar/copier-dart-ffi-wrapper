@@ -40,6 +40,38 @@ cd my_package
 copier update
 ```
 
+### Example with all parameters
+
+**C library wrapper:**
+```bash
+copier copy https://github.com/djx-y-z/copier-dart-ffi-wrapper my_package \
+  --data package_name=liboqs_dart \
+  --data description="Dart bindings for liboqs" \
+  --data native_library_name=oqs \
+  --data github_repo=djx-y-z/liboqs_dart \
+  --data native_repo=open-quantum-safe/liboqs \
+  --data wrapper_type=c \
+  --data native_version=0.12.0 \
+  --data ffi_prefix=OQS_ \
+  --data header_entry_point=headers/oqs/oqs.h
+```
+
+**Rust library wrapper:**
+```bash
+copier copy https://github.com/djx-y-z/copier-dart-ffi-wrapper my_package \
+  --data package_name=libsignal_dart \
+  --data description="Dart bindings for libsignal" \
+  --data native_library_name=signal \
+  --data github_repo=djx-y-z/libsignal_dart \
+  --data native_repo=signalapp/libsignal \
+  --data wrapper_type=rust \
+  --data native_version=v0.86.0 \
+  --data ffi_prefix=signal_ \
+  --data header_entry_point=headers/signal_ffi.h \
+  --data cbindgen_crate=libsignal-ffi \
+  --data strip_version_prefix=true
+```
+
 ## Variables
 
 | Variable | Description | Example |
