@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Badges in generated README.md (pub.dev, CI, License, Dart, Flutter, native library version)
 - Badges in template README.md (GitHub release, License)
 - Created `lib/src/` directory with `.gitkeep` in generated projects
+- CONTRIBUTING.md with development guidelines and testing instructions
+- Example commands with all parameters in README.md
 - Full absolute path in post-generation message
 - Information about updating topics and SECURITY.md in post-generation message
 - `_fixHeaders()` function available for both C and Rust wrappers (controlled by `needs_header_fixes`)
