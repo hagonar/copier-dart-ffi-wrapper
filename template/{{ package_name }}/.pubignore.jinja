@@ -1,0 +1,52 @@
+# Development files
+TODO.md
+Makefile
+.fvmrc
+.skip_{{ package_name }}_hook
+
+# CI/CD
+.github/
+
+# Build scripts and headers (only needed for development/ffigen)
+scripts/
+headers/
+
+# IDE and editor files
+.vscode/
+.idea/
+.claude/*
+!.claude/skills/
+.metadata
+*.iml
+
+# Coverage
+coverage/
+
+# Documentation
+doc/
+
+# Build artifacts
+build/
+example/build/
+example/.dart_tool/
+example/.flutter-plugins
+example/.flutter-plugins-dependencies
+example/ios/Podfile.lock
+example/macos/Podfile.lock
+example/.idea/
+example/android/.gradle/
+example/ios/Pods/
+example/macos/Pods/
+
+# Xcode workspace files
+example/ios/Runner.xcworkspace/
+example/macos/Runner.xcworkspace/
+
+# CLI example (not part of the Flutter plugin example)
+example_cli/
+
+# FVM
+.fvm/
+
+# Hook build cache
+hook/.dart_tool/

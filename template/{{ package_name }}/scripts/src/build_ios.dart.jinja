@@ -1,0 +1,197 @@
+/// Build {{ package_name }} for iOS.
+///
+/// Supports device (arm64), simulator-arm64, simulator-x86_64.
+library;
+
+import 'dart:io';
+
+import 'common.dart';
+
+/// iOS target to build for.
+enum IOSTarget { device, simulatorArm64, simulatorX86_64 }
+
+/// Build {{ package_name }} for iOS.
+Future<void> buildIOS({IOSTarget target = IOSTarget.device}) async {
+  if (!Platform.isMacOS) {
+    throw Exception('iOS build must be run on macOS');
+  }
+
+  final targetName = _targetToString(target);
+  printBuildHeader('iOS ($targetName)');
+
+  // Check dependencies
+  logStep('Checking dependencies...');
+  {% if wrapper_type == 'c' %}
+  await requireCommand('cmake');
+  await requireCommand('xcrun');
+  {% endif %}
+  {% if wrapper_type == 'rust' %}
+  await requireCommand('cargo');
+  await requireCommand('rustup');
+  {% endif %}
+
+  // Get version
+  final version = get{{ package_name | to_camel }}Version();
+  logInfo('{{ native_library_name }} version: $version');
+
+  // Setup directories
+  final packageDir = getPackageDir();
+  final tempDir = getTempBuildDir();
+  final sourceDir = '$tempDir/{{ native_library_name }}';
+
+  final archDir = _targetToArchDir(target);
+  final outputDir = '${packageDir.path}/ios/Libraries/$archDir';
+
+  // Clean and create temp directory
+  logStep('Preparing build directory...');
+  await removeDir(tempDir);
+  await ensureDir(tempDir);
+
+  // Clone source
+  logStep('Downloading {{ native_library_name }} $version...');
+  {% if wrapper_type == 'c' %}
+  await gitClone(
+    url: 'https://github.com/YOUR_ORG/{{ native_library_name }}.git',
+    targetDir: sourceDir,
+    branch: version,
+  );
+  {% endif %}
+  {% if wrapper_type == 'rust' %}
+  await cloneLibsignal(targetDir: sourceDir, version: version);
+  {% endif %}
+
+  // Build
+  await ensureDir(outputDir);
+
+  {% if wrapper_type == 'c' %}
+  final libPath = await _buildTarget(
+    target: target,
+    sourceDir: sourceDir,
+    tempDir: tempDir,
+  );
+  {% endif %}
+  {% if wrapper_type == 'rust' %}
+  final rustTarget = _targetToRustTarget(target);
+  final libPath = await buildLibsignalFfi(
+    sourceDir: sourceDir,
+    rustTarget: rustTarget,
+  );
+  {% endif %}
+
+  await copyFile(libPath, '$outputDir/{{ lib_ios }}');
+
+  // Fix install name
+  logStep('Fixing install name...');
+  await runCommandOrFail('install_name_tool', [
+    '-id',
+    '@rpath/{{ lib_ios }}',
+    '$outputDir/{{ lib_ios }}',
+  ]);
+
+  // Cleanup
+  logStep('Cleaning up...');
+  await removeDir(tempDir);
+
+  // Summary
+  printBuildSummary('iOS $targetName', outputDir);
+}
+
+String _targetToString(IOSTarget target) {
+  switch (target) {
+    case IOSTarget.device:
+      return 'device-arm64';
+    case IOSTarget.simulatorArm64:
+      return 'simulator-arm64';
+    case IOSTarget.simulatorX86_64:
+      return 'simulator-x86_64';
+  }
+}
+
+String _targetToArchDir(IOSTarget target) {
+  switch (target) {
+    case IOSTarget.device:
+      return 'device-arm64';
+    case IOSTarget.simulatorArm64:
+      return 'simulator-arm64';
+    case IOSTarget.simulatorX86_64:
+      return 'simulator-x86_64';
+  }
+}
+
+{% if wrapper_type == 'rust' %}
+String _targetToRustTarget(IOSTarget target) {
+  switch (target) {
+    case IOSTarget.device:
+      return 'aarch64-apple-ios';
+    case IOSTarget.simulatorArm64:
+      return 'aarch64-apple-ios-sim';
+    case IOSTarget.simulatorX86_64:
+      return 'x86_64-apple-ios';
+  }
+}
+{% endif %}
+
+{% if wrapper_type == 'c' %}
+Future<String> _buildTarget({
+  required IOSTarget target,
+  required String sourceDir,
+  required String tempDir,
+}) async {
+  final buildDir = '$tempDir/build-ios-${_targetToString(target)}';
+  await ensureDir(buildDir);
+
+  final (sdk, arch, sysroot) = _getSDKInfo(target);
+
+  logPlatform('iOS', 'Building for $arch with $sdk SDK...');
+
+  final cmakeArgs = [
+    sourceDir,
+    ...getBaseCMakeArgs(),
+    '-DBUILD_SHARED_LIBS=ON',
+    '-DCMAKE_SYSTEM_NAME=iOS',
+    '-DCMAKE_OSX_ARCHITECTURES=$arch',
+    '-DCMAKE_OSX_SYSROOT=$sysroot',
+    '-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0',
+    ...await getCMakeGeneratorArgs(),
+  ];
+
+  await runCommandOrFail('cmake', cmakeArgs, workingDirectory: buildDir);
+
+  final buildTool = await getBuildCommand();
+  final buildArgs = await getBuildArgs();
+  await runCommandOrFail(buildTool, buildArgs, workingDirectory: buildDir);
+
+  return '$buildDir/lib/{{ lib_ios }}';
+}
+
+(String sdk, String arch, String sysroot) _getSDKInfo(IOSTarget target) {
+  switch (target) {
+    case IOSTarget.device:
+      return ('iphoneos', 'arm64', 'iphoneos');
+    case IOSTarget.simulatorArm64:
+      return ('iphonesimulator', 'arm64', 'iphonesimulator');
+    case IOSTarget.simulatorX86_64:
+      return ('iphonesimulator', 'x86_64', 'iphonesimulator');
+  }
+}
+{% endif %}
+
+/// Parse target from command line argument.
+IOSTarget parseTarget(String? arg) {
+  switch (arg?.toLowerCase()) {
+    case 'device':
+    case 'device-arm64':
+      return IOSTarget.device;
+    case 'simulator-arm64':
+    case 'sim-arm64':
+      return IOSTarget.simulatorArm64;
+    case 'simulator-x86_64':
+    case 'sim-x86_64':
+    case 'simulator-x64':
+      return IOSTarget.simulatorX86_64;
+    case null:
+      return IOSTarget.device;
+    default:
+      throw Exception('Unknown iOS target: $arg');
+  }
+}

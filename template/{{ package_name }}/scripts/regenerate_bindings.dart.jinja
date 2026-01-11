@@ -1,0 +1,446 @@
+#!/usr/bin/env dart
+/// Regenerate FFI bindings from header files.
+///
+/// This script:
+{% if wrapper_type == 'c' %}
+/// 1. Clones {{ native_library_name }} source at the specified version
+/// 2. Builds with CMake to generate headers
+/// 3. Copies headers to the headers/ directory
+/// 4. Runs ffigen to generate Dart FFI bindings
+/// 5. Runs quick tests to verify
+{% endif %}
+{% if wrapper_type == 'rust' %}
+/// 1. Clones {{ native_library_name }} source at the specified version
+/// 2. Installs cbindgen at the required version
+/// 3. Runs cbindgen to generate C headers
+/// 4. Copies headers to the headers/ directory
+/// 5. Runs ffigen to generate Dart FFI bindings
+{% endif %}
+///
+/// Usage:
+///   dart run scripts/regenerate_bindings.dart
+///
+/// Requirements:
+{% if wrapper_type == 'c' %}
+///   - cmake
+///   - ninja (optional, falls back to make)
+{% endif %}
+{% if wrapper_type == 'rust' %}
+///   - cargo
+///   - rustup
+{% endif %}
+///   - dart sdk with ffigen
+library;
+
+import 'dart:io';
+
+import 'src/common.dart';
+
+String? _tempDir;
+String? _sourceDir;
+String? _buildDir;
+String? _headersDir;
+Directory? _packageDir;
+
+void main(List<String> args) async {
+  if (args.contains('--help') || args.contains('-h')) {
+    _printUsage();
+    exit(0);
+  }
+
+  print('');
+  print('========================================');
+  print('  {{ package_name }} Bindings Regenerator');
+  print('========================================');
+  print('');
+
+  try {
+    await _checkRequirements();
+    await _initialize();
+
+    final version = get{{ package_name | to_camel }}Version();
+    logInfo('Target {{ native_library_name }} version: $version');
+
+    await _downloadSource(version);
+{% if wrapper_type == 'c' %}
+    await _buildWithCMake();
+{% endif %}
+{% if wrapper_type == 'rust' %}
+    await _installCbindgen();
+    await _generateHeadersWithCbindgen();
+{% endif %}
+    await _copyHeaders();
+{% if wrapper_type == 'c' %}
+    await _fixHeaders();
+{% endif %}
+    await _generateBindings();
+    final testsPassed = await _runTests();
+    await _cleanup();
+
+    print('');
+    if (testsPassed) {
+      logInfo('SUCCESS! Bindings regenerated for {{ native_library_name }} $version');
+    } else {
+      logWarn('Bindings generated but tests failed');
+      logWarn('Manual review may be needed');
+    }
+
+    print('');
+    print('Next steps:');
+    print('  1. Review changes: git diff lib/src/bindings/');
+    print('  2. Run full tests: make test');
+    print('  3. Commit changes if everything works');
+    print('');
+  } catch (e) {
+    logError(e.toString());
+    await _cleanup();
+    exit(1);
+  }
+}
+
+/// Check requirements
+Future<void> _checkRequirements() async {
+  logStep('Checking requirements...');
+
+{% if wrapper_type == 'c' %}
+  await requireCommand('cmake');
+  await requireCommand('git');
+{% endif %}
+{% if wrapper_type == 'rust' %}
+  await requireCommand('git');
+  await requireCommand('cargo');
+  await requireCommand('rustup');
+{% endif %}
+  await requireCommand('dart');
+
+  logInfo('All requirements satisfied');
+}
+
+/// Initialize paths
+Future<void> _initialize() async {
+  _packageDir = getPackageDir();
+  _tempDir = getTempBuildDir();
+  _sourceDir = '$_tempDir/{{ native_library_name }}';
+  _buildDir = '$_tempDir/build';
+  _headersDir = '${_packageDir!.path}/headers';
+
+  logInfo('Package directory: ${_packageDir!.path}');
+  logInfo('Temp directory: $_tempDir');
+
+  // Check if ffigen is available
+  final result = await runCommand(
+    'dart',
+    ['pub', 'deps'],
+    workingDirectory: _packageDir!.path,
+  );
+
+  if (!result.stdout.toString().contains('ffigen')) {
+    logWarn('ffigen not found in dependencies, running dart pub get...');
+    await runCommandOrFail('dart', ['pub', 'get'],
+        workingDirectory: _packageDir!.path);
+  }
+}
+
+/// Download source code
+Future<void> _downloadSource(String version) async {
+  logStep('Downloading {{ native_library_name }} $version...');
+
+  await removeDir(_tempDir!);
+  await ensureDir(_tempDir!);
+
+  await gitClone(
+    url: 'https://github.com/{{ github_repo }}.git',
+    targetDir: _sourceDir!,
+    branch: version,
+  );
+
+  logInfo('Downloaded to $_sourceDir');
+}
+
+{% if wrapper_type == 'c' %}
+/// Build with CMake to generate headers
+Future<void> _buildWithCMake() async {
+  logStep('Building {{ native_library_name }} with CMake to generate headers...');
+
+  await ensureDir(_buildDir!);
+
+  // Configure with cmake
+  final cmakeArgs = [
+    _sourceDir!,
+    '-DCMAKE_BUILD_TYPE=Release',
+    {% if cmake_extra_args %}
+    // Extra CMake args from configuration
+    ...('{{ cmake_extra_args }}'.split(' ').where((s) => s.isNotEmpty)),
+    {% endif %}
+    ...await getCMakeGeneratorArgs(),
+  ];
+
+  await runCommandOrFail('cmake', cmakeArgs, workingDirectory: _buildDir!);
+
+  // Build
+  logInfo('Building (this may take a few minutes)...');
+
+  final buildTool = await getBuildCommand();
+  final buildArgs = await getBuildArgs();
+
+  // Try to build, but don't fail if it doesn't complete fully
+  // (we just need headers to be generated)
+  try {
+    await runCommandOrFail(buildTool, buildArgs, workingDirectory: _buildDir!);
+  } catch (_) {
+    logWarn('Build did not complete fully, but headers may be available');
+  }
+
+  // Check if headers were generated
+  final includeDir = Directory('${_buildDir!}/{{ cmake_headers_path }}');
+  if (!includeDir.existsSync()) {
+    throw Exception('Headers were not generated in ${includeDir.path}');
+  }
+
+  logInfo('Headers generated in ${includeDir.path}');
+}
+{% endif %}
+
+{% if wrapper_type == 'rust' %}
+/// Install cbindgen at the required version
+Future<void> _installCbindgen() async {
+  // Try to get cbindgen version from the source
+  final cbindgenVersion = _getCbindgenVersion();
+  logStep('Installing cbindgen $cbindgenVersion...');
+
+  await runCommandOrFail('cargo', [
+    'install',
+    'cbindgen',
+    '--version',
+    cbindgenVersion,
+  ]);
+}
+
+/// Get cbindgen version from source
+String _getCbindgenVersion() {
+  // Try to read version from Cargo.lock or use default
+  final cargoLock = File('$_sourceDir/Cargo.lock');
+  if (cargoLock.existsSync()) {
+    final content = cargoLock.readAsStringSync();
+    final match = RegExp(r'name\s*=\s*"cbindgen"\s+version\s*=\s*"([^"]+)"')
+        .firstMatch(content);
+    if (match != null) {
+      return match.group(1)!;
+    }
+  }
+
+  // Default cbindgen version
+  return '0.26.0';
+}
+
+/// Generate headers with cbindgen
+Future<void> _generateHeadersWithCbindgen() async {
+  logStep('Generating C headers with cbindgen...');
+
+  // Find cbindgen config file
+  final cbindgenConfig = '$_sourceDir/{{ cbindgen_config_path }}';
+  if (!File(cbindgenConfig).existsSync()) {
+    throw Exception('cbindgen.toml not found at $cbindgenConfig');
+  }
+
+  // Run cbindgen to generate headers
+  await runCommandOrFail('cbindgen', [
+    '--config',
+    cbindgenConfig,
+    '--crate',
+    '{{ cbindgen_crate }}',
+    '--output',
+    '$_tempDir/{{ native_library_name }}_ffi.h',
+  ], workingDirectory: _sourceDir!);
+
+  logInfo('Headers generated');
+}
+{% endif %}
+
+/// Copy headers to package
+Future<void> _copyHeaders() async {
+  logStep('Copying headers to $_headersDir...');
+
+  await removeDir(_headersDir!);
+  await ensureDir(_headersDir!);
+
+{% if wrapper_type == 'c' %}
+  final sourceHeaders = Directory('${_buildDir!}/{{ cmake_headers_path }}');
+  var count = 0;
+
+  await for (final entity in sourceHeaders.list(recursive: true)) {
+    if (entity is File && entity.path.endsWith('.h')) {
+      // Calculate relative path and preserve directory structure
+      final relativePath = entity.path.substring(sourceHeaders.path.length + 1);
+      final destPath = '${_headersDir!}/$relativePath';
+
+      await ensureDir(File(destPath).parent.path);
+      await entity.copy(destPath);
+      count++;
+    }
+  }
+
+  logInfo('Copied $count header files');
+{% endif %}
+{% if wrapper_type == 'rust' %}
+  await copyFile(
+    '${_tempDir!}/{{ native_library_name }}_ffi.h',
+    '${_headersDir!}/{{ native_library_name }}_ffi.h',
+  );
+
+  logInfo('Copied {{ native_library_name }}_ffi.h');
+{% endif %}
+}
+
+{% if wrapper_type == 'c' %}
+/// Fix headers (e.g., cyclic includes)
+///
+/// TODO: Customize this function if your library has specific header issues.
+/// Common fixes include:
+/// - Replacing cyclic includes (e.g., oqs.h includes itself via sub-headers)
+/// - Adding missing includes
+/// - Fixing platform-specific issues
+Future<void> _fixHeaders() async {
+  logStep('Checking and fixing headers...');
+
+  final headersDir = Directory(_headersDir!);
+  var fixedCount = 0;
+
+  await for (final file in headersDir.list(recursive: true)) {
+    if (file is File && file.path.endsWith('.h')) {
+      var content = await file.readAsString();
+      var modified = false;
+
+      // TODO: Add your header fixes here
+      // Example: Fix cyclic includes
+      // if (content.contains('#include <{{ native_library_name }}/{{ native_library_name }}.h>')) {
+      //   content = content.replaceAll(
+      //     '#include <{{ native_library_name }}/{{ native_library_name }}.h>',
+      //     '#include <{{ native_library_name }}/common.h>',
+      //   );
+      //   modified = true;
+      // }
+
+      if (modified) {
+        await file.writeAsString(content);
+        fixedCount++;
+      }
+    }
+  }
+
+  if (fixedCount > 0) {
+    logInfo('Fixed $fixedCount header files');
+  } else {
+    logInfo('No header fixes needed');
+  }
+}
+{% endif %}
+
+/// Generate Dart bindings using ffigen
+Future<void> _generateBindings() async {
+  logStep('Generating Dart FFI bindings...');
+
+  final result = await runCommand(
+    'dart',
+    ['run', 'ffigen'],
+    workingDirectory: _packageDir!.path,
+  );
+
+  if (result.exitCode != 0) {
+    print(result.stdout);
+    print(result.stderr);
+    throw Exception('ffigen failed');
+  }
+
+  print(result.stdout);
+
+  // Verify bindings were generated
+  final bindingsFile = File(
+    '${_packageDir!.path}/lib/src/bindings/{{ package_name }}_bindings.dart',
+  );
+  if (!bindingsFile.existsSync()) {
+    throw Exception('Bindings file was not generated');
+  }
+
+  final lineCount = bindingsFile.readAsLinesSync().length;
+  if (lineCount < 100) {
+    logWarn(
+      'Generated bindings seem small ($lineCount lines). '
+      'Check ffigen output for errors.',
+    );
+  }
+
+  logInfo('Generated bindings: $lineCount lines');
+}
+
+/// Run quick tests to verify bindings
+Future<bool> _runTests() async {
+  logStep('Running tests to verify bindings...');
+
+  final testFile = File('${_packageDir!.path}/test/quick_test.dart');
+  if (!testFile.existsSync()) {
+    logWarn('Quick test file not found, skipping tests');
+    return true;
+  }
+
+  final result = await runCommand(
+    'dart',
+    ['test', 'test/quick_test.dart'],
+    workingDirectory: _packageDir!.path,
+  );
+
+  if (result.exitCode == 0) {
+    logInfo('Quick test passed!');
+    return true;
+  } else {
+    logWarn('Quick test failed');
+    print(result.stdout);
+    print(result.stderr);
+    return false;
+  }
+}
+
+/// Cleanup temporary files
+Future<void> _cleanup() async {
+  logStep('Cleaning up temporary files...');
+  if (_tempDir != null) {
+    await removeDir(_tempDir!);
+  }
+}
+
+void _printUsage() {
+  print('''
+Regenerate Dart FFI Bindings for {{ package_name }}
+
+Usage:
+  dart run scripts/regenerate_bindings.dart
+
+This script:
+{% if wrapper_type == 'c' %}
+  1. Reads version from pubspec.yaml ({{ package_name }}.native_version)
+  2. Downloads {{ native_library_name }} source code
+  3. Builds with CMake to generate headers
+  4. Copies headers to headers/ directory
+  5. Fixes any header issues (cyclic includes, etc.)
+  6. Runs ffigen to generate Dart bindings
+  7. Runs quick tests to verify
+
+Requirements:
+  - cmake
+  - ninja (optional, faster builds)
+  - dart sdk with ffigen dependency
+{% endif %}
+{% if wrapper_type == 'rust' %}
+  1. Reads version from pubspec.yaml ({{ package_name }}.native_version)
+  2. Downloads {{ native_library_name }} source code
+  3. Installs cbindgen
+  4. Generates C headers with cbindgen
+  5. Copies headers to headers/ directory
+  6. Runs ffigen to generate Dart bindings
+
+Requirements:
+  - cargo & rustup
+  - dart sdk with ffigen dependency
+{% endif %}
+''');
+}

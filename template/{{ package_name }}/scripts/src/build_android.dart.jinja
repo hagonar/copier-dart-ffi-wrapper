@@ -1,0 +1,308 @@
+/// Build {{ package_name }} for Android.
+///
+/// Supports arm64-v8a, armeabi-v7a, x86_64.
+library;
+
+import 'dart:io';
+
+import 'common.dart';
+
+/// Android ABI to build for.
+enum AndroidAbi {
+  arm64V8a('arm64-v8a'),
+  armeabiV7a('armeabi-v7a'),
+  x86_64('x86_64'),
+  all('all');
+
+  final String value;
+  const AndroidAbi(this.value);
+}
+
+/// Build {{ package_name }} for Android.
+Future<void> buildAndroid({AndroidAbi abi = AndroidAbi.all}) async {
+  if (!Platform.isLinux && !Platform.isMacOS) {
+    throw Exception('Android build must be run on Linux or macOS');
+  }
+
+  printBuildHeader('Android (${abi.value})');
+
+  // Check dependencies
+  logStep('Checking dependencies...');
+  {% if wrapper_type == 'c' %}
+  await requireCommand('cmake');
+
+  final buildTool = await getBuildCommand();
+  logInfo('Build tool: $buildTool');
+  {% endif %}
+  {% if wrapper_type == 'rust' %}
+  await requireCommand('cargo');
+  await requireCommand('rustup');
+  {% endif %}
+
+  // Find NDK
+  final ndkPath = await _findNDK();
+  logInfo('Android NDK: $ndkPath');
+
+  // Get version
+  final version = get{{ package_name | to_camel }}Version();
+  logInfo('{{ native_library_name }} version: $version');
+
+  // Setup directories
+  final packageDir = getPackageDir();
+  final tempDir = getTempBuildDir();
+  final sourceDir = '$tempDir/{{ native_library_name }}';
+  final outputBaseDir = '${packageDir.path}/android/src/main/jniLibs';
+
+  // Clean and create temp directory
+  logStep('Preparing build directory...');
+  await removeDir(tempDir);
+  await ensureDir(tempDir);
+
+  // Clone source
+  logStep('Downloading {{ native_library_name }} $version...');
+  {% if wrapper_type == 'c' %}
+  await gitClone(
+    url: 'https://github.com/YOUR_ORG/{{ native_library_name }}.git',
+    targetDir: sourceDir,
+    branch: version,
+  );
+  {% endif %}
+  {% if wrapper_type == 'rust' %}
+  await cloneLibsignal(targetDir: sourceDir, version: version);
+  {% endif %}
+
+  // Determine which ABIs to build
+  final abis = abi == AndroidAbi.all
+      ? [AndroidAbi.arm64V8a, AndroidAbi.armeabiV7a, AndroidAbi.x86_64]
+      : [abi];
+
+  // Build each ABI
+  for (final targetAbi in abis) {
+    {% if wrapper_type == 'c' %}
+    await _buildAbiC(
+      abi: targetAbi.value,
+      ndkPath: ndkPath,
+      sourceDir: sourceDir,
+      tempDir: tempDir,
+      packageDir: packageDir.path,
+      buildTool: buildTool,
+    );
+    {% endif %}
+    {% if wrapper_type == 'rust' %}
+    await _buildAbiRust(
+      abi: targetAbi,
+      ndkPath: ndkPath,
+      sourceDir: sourceDir,
+      outputBaseDir: outputBaseDir,
+    );
+    {% endif %}
+  }
+
+  // Cleanup
+  logStep('Cleaning up...');
+  await removeDir(tempDir);
+
+  // Summary
+  printBuildSummary('Android', outputBaseDir);
+}
+
+/// Find Android NDK path.
+Future<String> _findNDK() async {
+  logStep('Looking for Android NDK...');
+
+  // Check ANDROID_NDK_HOME first
+  final ndkHome = Platform.environment['ANDROID_NDK_HOME'];
+  if (ndkHome != null && Directory(ndkHome).existsSync()) {
+    return ndkHome;
+  }
+
+  // Check ANDROID_NDK_ROOT
+  final ndkRoot = Platform.environment['ANDROID_NDK_ROOT'];
+  if (ndkRoot != null && Directory(ndkRoot).existsSync()) {
+    return ndkRoot;
+  }
+
+  // Try common locations
+  final possiblePaths = [
+    Platform.environment['ANDROID_SDK_ROOT'],
+    Platform.environment['ANDROID_HOME'],
+    if (Platform.isMacOS)
+      '${Platform.environment['HOME']}/Library/Android/sdk',
+    if (Platform.isLinux) '${Platform.environment['HOME']}/Android/Sdk',
+    '/usr/local/share/android-sdk',
+  ];
+
+  for (final basePath in possiblePaths) {
+    if (basePath == null) continue;
+
+    final ndkDir = Directory('$basePath/ndk');
+    if (ndkDir.existsSync()) {
+      // Find newest version
+      final versions =
+          ndkDir
+              .listSync()
+              .whereType<Directory>()
+              .map((d) => d.path.split('/').last)
+              .toList()
+            ..sort();
+
+      if (versions.isNotEmpty) {
+        return '${ndkDir.path}/${versions.last}';
+      }
+    }
+  }
+
+  throw Exception('''
+Android NDK not found!
+
+Set ANDROID_NDK_HOME environment variable or install NDK via Android Studio:
+  1. Open Android Studio -> SDK Manager -> SDK Tools
+  2. Check 'NDK (Side by side)' and install
+
+Or set manually:
+  export ANDROID_NDK_HOME=/path/to/ndk/26.3.11579264
+''');
+}
+
+{% if wrapper_type == 'c' %}
+/// Build for a specific ABI (C library).
+Future<void> _buildAbiC({
+  required String abi,
+  required String ndkPath,
+  required String sourceDir,
+  required String tempDir,
+  required String packageDir,
+  required String buildTool,
+}) async {
+  logPlatform('Android', 'Building for $abi...');
+
+  final buildDir = '$tempDir/build-android-$abi';
+  await ensureDir(buildDir);
+
+  final toolchainFile = '$ndkPath/build/cmake/android.toolchain.cmake';
+  if (!File(toolchainFile).existsSync()) {
+    throw Exception('NDK toolchain not found: $toolchainFile');
+  }
+
+  final cmakeArgs = [
+    sourceDir,
+    ...getBaseCMakeArgs(),
+    '-DBUILD_SHARED_LIBS=ON',
+    '-DCMAKE_TOOLCHAIN_FILE=$toolchainFile',
+    '-DANDROID_ABI=$abi',
+    '-DANDROID_PLATFORM=android-{{ android_min_sdk }}',
+    '-DANDROID_STL=c++_shared',
+    ...await getCMakeGeneratorArgs(),
+  ];
+
+  await runCommandOrFail('cmake', cmakeArgs, workingDirectory: buildDir);
+
+  final buildArgs = await getBuildArgs();
+  await runCommandOrFail(buildTool, buildArgs, workingDirectory: buildDir);
+
+  // Copy output
+  final outputDir = '$packageDir/android/src/main/jniLibs/$abi';
+  await ensureDir(outputDir);
+  await copyFile('$buildDir/lib/{{ lib_android }}', '$outputDir/{{ lib_android }}');
+
+  logInfo('Built $abi');
+}
+{% endif %}
+
+{% if wrapper_type == 'rust' %}
+/// Build for a specific ABI (Rust library).
+Future<void> _buildAbiRust({
+  required AndroidAbi abi,
+  required String ndkPath,
+  required String sourceDir,
+  required String outputBaseDir,
+}) async {
+  final abiValue = abi.value;
+  final rustTarget = _getRustTarget(abiValue);
+
+  logPlatform('Android', 'Building for $abiValue ($rustTarget)...');
+
+  // Configure linker for Android
+  const apiLevel = {{ android_min_sdk }};
+  final hostTag = _getNdkHostTag();
+  final toolchainBin = '$ndkPath/toolchains/llvm/prebuilt/$hostTag/bin';
+  final clangTarget = _getNdkClangTarget(abiValue, apiLevel);
+
+  // Convert Rust target to cargo environment variable format
+  final envTarget = rustTarget.toUpperCase().replaceAll('-', '_');
+
+  final env = <String, String>{
+    'ANDROID_NDK_HOME': ndkPath,
+    'CARGO_TARGET_${envTarget}_LINKER': '$toolchainBin/$clangTarget-clang',
+    'AR_$rustTarget': '$toolchainBin/llvm-ar',
+    'CC_$rustTarget': '$toolchainBin/$clangTarget-clang',
+  };
+
+  final libPath = await buildLibsignalFfi(
+    sourceDir: sourceDir,
+    rustTarget: rustTarget,
+    environment: env,
+  );
+
+  // Copy output to jniLibs directory
+  final outputDir = '$outputBaseDir/$abiValue';
+  await ensureDir(outputDir);
+  await copyFile(libPath, '$outputDir/{{ lib_android }}');
+}
+
+String _getRustTarget(String abi) {
+  switch (abi) {
+    case 'arm64-v8a':
+      return 'aarch64-linux-android';
+    case 'armeabi-v7a':
+      return 'armv7-linux-androideabi';
+    case 'x86_64':
+      return 'x86_64-linux-android';
+    default:
+      throw Exception('Unsupported ABI: $abi');
+  }
+}
+
+String _getNdkHostTag() {
+  if (Platform.isMacOS) {
+    return 'darwin-x86_64';
+  } else if (Platform.isLinux) {
+    return 'linux-x86_64';
+  }
+  throw Exception('Unsupported host platform');
+}
+
+String _getNdkClangTarget(String abi, int apiLevel) {
+  switch (abi) {
+    case 'arm64-v8a':
+      return 'aarch64-linux-android$apiLevel';
+    case 'armeabi-v7a':
+      return 'armv7a-linux-androideabi$apiLevel';
+    case 'x86_64':
+      return 'x86_64-linux-android$apiLevel';
+    default:
+      throw Exception('Unsupported ABI: $abi');
+  }
+}
+{% endif %}
+
+/// Parse ABI from command line argument.
+AndroidAbi parseAbi(String? arg) {
+  switch (arg?.toLowerCase()) {
+    case 'arm64-v8a':
+    case 'arm64':
+      return AndroidAbi.arm64V8a;
+    case 'armeabi-v7a':
+    case 'arm32':
+    case 'armv7':
+      return AndroidAbi.armeabiV7a;
+    case 'x86_64':
+    case 'x64':
+      return AndroidAbi.x86_64;
+    case 'all':
+    case null:
+      return AndroidAbi.all;
+    default:
+      throw Exception('Unknown Android ABI: $arg');
+  }
+}

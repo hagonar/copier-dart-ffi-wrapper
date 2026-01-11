@@ -1,0 +1,136 @@
+/// Build {{ package_name }} for Linux.
+///
+/// Supports x86_64 and arm64 (native builds only).
+library;
+
+import 'dart:io';
+
+import 'common.dart';
+
+/// Build {{ package_name }} for Linux.
+///
+/// The [arch] parameter is optional and used for display purposes.
+/// The actual build uses native compilation for the host architecture.
+Future<void> buildLinux({String? arch}) async {
+  if (!Platform.isLinux) {
+    throw Exception('Linux build must be run on Linux');
+  }
+
+  // Detect host architecture if not specified
+  final hostArch = _detectHostArch();
+  final targetArch = arch ?? hostArch;
+
+  printBuildHeader('Linux ($targetArch)');
+
+  // Check dependencies
+  logStep('Checking dependencies...');
+  {% if wrapper_type == 'c' %}
+  await requireCommand('cmake');
+  await requireCommand('gcc');
+  await requireCommand('g++');
+
+  final buildTool = await getBuildCommand();
+  logInfo('Build tool: $buildTool');
+  {% endif %}
+  {% if wrapper_type == 'rust' %}
+  await requireCommand('cargo');
+  await requireCommand('rustup');
+  {% endif %}
+
+  // Get version
+  final version = get{{ package_name | to_camel }}Version();
+  logInfo('{{ native_library_name }} version: $version');
+
+  // Setup directories
+  final packageDir = getPackageDir();
+  final tempDir = getTempBuildDir();
+  final sourceDir = '$tempDir/{{ native_library_name }}';
+  final outputDir = '${packageDir.path}/bin/linux';
+
+  // Clean and create temp directory
+  logStep('Preparing build directory...');
+  await removeDir(tempDir);
+  await ensureDir(tempDir);
+
+  // Clone source
+  logStep('Downloading {{ native_library_name }} $version...');
+  {% if wrapper_type == 'c' %}
+  await gitClone(
+    url: 'https://github.com/YOUR_ORG/{{ native_library_name }}.git',
+    targetDir: sourceDir,
+    branch: version,
+  );
+  {% endif %}
+  {% if wrapper_type == 'rust' %}
+  await cloneLibsignal(targetDir: sourceDir, version: version);
+  {% endif %}
+
+  // Build
+  await ensureDir(outputDir);
+
+  {% if wrapper_type == 'c' %}
+  final buildDir = '$tempDir/build-linux';
+  await ensureDir(buildDir);
+
+  logStep('Configuring with CMake...');
+  final cmakeArgs = [
+    sourceDir,
+    ...getBaseCMakeArgs(),
+    '-DBUILD_SHARED_LIBS=ON',
+    ...await getCMakeGeneratorArgs(),
+  ];
+
+  await runCommandOrFail('cmake', cmakeArgs, workingDirectory: buildDir);
+
+  logStep('Building...');
+  final buildArgs = await getBuildArgs();
+  await runCommandOrFail(buildTool, buildArgs, workingDirectory: buildDir);
+
+  await copyFile('$buildDir/lib/{{ lib_linux }}', '$outputDir/{{ lib_linux }}');
+  {% endif %}
+  {% if wrapper_type == 'rust' %}
+  final rustTarget = _getRustTarget(targetArch);
+  final libPath = await buildLibsignalFfi(
+    sourceDir: sourceDir,
+    rustTarget: rustTarget,
+  );
+
+  await copyFile(libPath, '$outputDir/{{ lib_linux }}');
+  {% endif %}
+
+  // Cleanup
+  logStep('Cleaning up...');
+  await removeDir(tempDir);
+
+  // Summary
+  printBuildSummary('Linux $targetArch', outputDir);
+}
+
+/// Detect host architecture.
+String _detectHostArch() {
+  final result = Process.runSync('uname', ['-m']);
+  final machine = result.stdout.toString().trim();
+  switch (machine) {
+    case 'x86_64':
+    case 'amd64':
+      return 'x86_64';
+    case 'aarch64':
+    case 'arm64':
+      return 'arm64';
+    default:
+      return machine;
+  }
+}
+
+{% if wrapper_type == 'rust' %}
+String _getRustTarget(String arch) {
+  switch (arch) {
+    case 'x86_64':
+      return 'x86_64-unknown-linux-gnu';
+    case 'arm64':
+      return 'aarch64-unknown-linux-gnu';
+    default:
+      throw Exception('Unsupported architecture: $arch');
+  }
+}
+{% endif %}

@@ -1,0 +1,491 @@
+# Build {{ package_name }} native libraries for all platforms
+#
+# This workflow uses cross-platform Dart scripts from scripts/ directory.
+# The same scripts can be run locally on any OS with Dart SDK.
+#
+# Platforms:
+# - Linux x86_64, arm64 (dynamic .so)
+# - macOS arm64, x86_64 (dynamic .dylib)
+# - iOS device arm64, simulator arm64/x86_64 (dynamic .dylib)
+# - Android arm64-v8a, armeabi-v7a, x86_64 (dynamic .so)
+# - Windows x86_64 (dynamic .dll)
+#
+# Trigger:
+# - Manual dispatch (workflow_dispatch) - for first run or force rebuild
+# - Push to main when pubspec.yaml changes (contains {{ package_name }}.native_version)
+#
+# After successful build, creates/updates GitHub Release with native library archives.
+
+name: Build {{ package_name }} Native Libraries
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'pubspec.yaml'
+
+jobs:
+  # ============================================
+  # Read version from file
+  # ============================================
+  read-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{"{{"}} steps.check.outputs.version {{"}}"}}
+      build: ${{"{{"}} steps.check.outputs.build {{"}}"}}
+      full_version: ${{"{{"}} steps.check.outputs.full_version {{"}}"}}
+      skip: ${{"{{"}} steps.check.outputs.skip {{"}}"}}
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{"{{"}} vars.APP_ID {{"}}"}}
+          private-key: ${{"{{"}} secrets.APP_PRIVATE_KEY {{"}}"}}
+
+      - uses: actions/checkout@v4
+
+      - name: Setup FVM and Flutter
+        uses: ./.github/actions/setup-fvm
+
+      - name: Check version and release
+        id: check
+        env:
+          GITHUB_TOKEN: ${{"{{"}} steps.app-token.outputs.token {{"}}"}}
+        run: make check-release ARGS="--ci"
+
+  # ============================================
+  # Linux (x86_64 + arm64 on separate runners)
+  # ============================================
+  build-linux:
+    needs: read-version
+    if: needs.read-version.outputs.skip != 'true'
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+{% if wrapper_type == 'rust' %}
+            rust_target: x86_64-unknown-linux-gnu
+{% endif %}
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+{% if wrapper_type == 'rust' %}
+            rust_target: aarch64-unknown-linux-gnu
+{% endif %}
+    runs-on: ${{"{{"}} matrix.runner {{"}}"}}
+    steps:
+      - uses: actions/checkout@v4
+
+{% if wrapper_type == 'rust' %}
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          targets: ${{"{{"}} matrix.rust_target {{"}}"}}
+
+{% endif %}
+      - name: Setup FVM and Flutter
+        uses: ./.github/actions/setup-fvm
+
+{% if wrapper_type == 'c' %}
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build gcc g++
+{% endif %}
+{% if wrapper_type == 'rust' %}
+      - name: Install Protobuf
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+          protoc --version
+{% endif %}
+
+      - name: Build for Linux ${{"{{"}} matrix.arch {{"}}"}}
+        run: make build ARGS="linux --arch ${{"{{"}} matrix.arch {{"}}"}}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: {{ package_name }}-linux-${{"{{"}} matrix.arch {{"}}"}}
+          path: bin/linux/{{ lib_linux }}
+
+  # ============================================
+  # macOS (arm64 + x86_64 on separate runners)
+  # ============================================
+  build-macos:
+    needs: read-version
+    if: needs.read-version.outputs.skip != 'true'
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-latest
+{% if wrapper_type == 'rust' %}
+            rust_target: aarch64-apple-darwin
+{% endif %}
+          - arch: x86_64
+            runner: macos-15-intel
+{% if wrapper_type == 'rust' %}
+            rust_target: x86_64-apple-darwin
+{% endif %}
+    runs-on: ${{"{{"}} matrix.runner {{"}}"}}
+    steps:
+      - uses: actions/checkout@v4
+
+{% if wrapper_type == 'rust' %}
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          targets: ${{"{{"}} matrix.rust_target {{"}}"}}
+
+{% endif %}
+      - name: Setup FVM and Flutter
+        uses: ./.github/actions/setup-fvm
+
+{% if wrapper_type == 'c' %}
+      - name: Install dependencies
+        run: brew install cmake ninja
+{% endif %}
+{% if wrapper_type == 'rust' %}
+      - name: Install Protobuf
+        run: |
+          brew install protobuf
+          protoc --version
+{% endif %}
+
+      - name: Build for macOS ${{"{{"}} matrix.arch {{"}}"}}
+        run: make build ARGS="macos --arch ${{"{{"}} matrix.arch {{"}}"}}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: {{ package_name }}-macos-${{"{{"}} matrix.arch {{"}}"}}
+          path: bin/macos/{{ lib_macos }}
+
+  # ============================================
+  # iOS (dynamic .dylib)
+  # ============================================
+  build-ios:
+    needs: read-version
+    if: needs.read-version.outputs.skip != 'true'
+    strategy:
+      matrix:
+        include:
+          - target: device
+            arch: arm64
+            runner: macos-latest
+            dart_target: device
+{% if wrapper_type == 'rust' %}
+            rust_target: aarch64-apple-ios
+{% endif %}
+          - target: simulator
+            arch: arm64
+            runner: macos-latest
+            dart_target: simulator-arm64
+{% if wrapper_type == 'rust' %}
+            rust_target: aarch64-apple-ios-sim
+{% endif %}
+          - target: simulator
+            arch: x86_64
+            runner: macos-15-intel
+            dart_target: simulator-x86_64
+{% if wrapper_type == 'rust' %}
+            rust_target: x86_64-apple-ios
+{% endif %}
+    runs-on: ${{"{{"}} matrix.runner {{"}}"}}
+    steps:
+      - uses: actions/checkout@v4
+
+{% if wrapper_type == 'rust' %}
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          targets: ${{"{{"}} matrix.rust_target {{"}}"}}
+
+{% endif %}
+      - name: Setup FVM and Flutter
+        uses: ./.github/actions/setup-fvm
+
+{% if wrapper_type == 'c' %}
+      - name: Install dependencies
+        run: brew install cmake ninja
+{% endif %}
+{% if wrapper_type == 'rust' %}
+      - name: Install Protobuf
+        run: |
+          brew install protobuf
+          protoc --version
+{% endif %}
+
+      - name: Build for iOS ${{"{{"}} matrix.target {{"}}"}} ${{"{{"}} matrix.arch {{"}}"}}
+        run: make build ARGS="ios --target ${{"{{"}} matrix.dart_target {{"}}"}}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: {{ package_name }}-ios-${{"{{"}} matrix.target {{"}}"}}-${{"{{"}} matrix.arch {{"}}"}}
+          path: ios/Libraries/${{"{{"}} matrix.target {{"}}"}}-${{"{{"}} matrix.arch {{"}}"}}/{{ lib_ios }}
+
+  # ============================================
+  # Android (all architectures)
+  # ============================================
+  build-android:
+    needs: read-version
+    if: needs.read-version.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        abi: [arm64-v8a, armeabi-v7a, x86_64]
+{% if wrapper_type == 'rust' %}
+        include:
+          - abi: arm64-v8a
+            rust_target: aarch64-linux-android
+          - abi: armeabi-v7a
+            rust_target: armv7-linux-androideabi
+          - abi: x86_64
+            rust_target: x86_64-linux-android
+{% endif %}
+    steps:
+      - uses: actions/checkout@v4
+
+{% if wrapper_type == 'rust' %}
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          targets: ${{"{{"}} matrix.rust_target {{"}}"}}
+
+{% endif %}
+      - name: Setup FVM and Flutter
+        uses: ./.github/actions/setup-fvm
+
+{% if wrapper_type == 'c' %}
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+{% endif %}
+{% if wrapper_type == 'rust' %}
+      - name: Install Protobuf
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+          protoc --version
+{% endif %}
+
+      - name: Setup Android NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        run: |
+          sdkmanager --install "ndk;26.3.11579264"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/26.3.11579264" >> $GITHUB_ENV
+
+      - name: Build for Android ${{"{{"}} matrix.abi {{"}}"}}
+        run: make build ARGS="android --abi ${{"{{"}} matrix.abi {{"}}"}}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: {{ package_name }}-android-${{"{{"}} matrix.abi {{"}}"}}
+          path: android/src/main/jniLibs/${{"{{"}} matrix.abi {{"}}"}}/{{ lib_android }}
+
+  # ============================================
+  # Windows x86_64
+  # ============================================
+  build-windows:
+    needs: read-version
+    if: needs.read-version.outputs.skip != 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+{% if wrapper_type == 'rust' %}
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          targets: x86_64-pc-windows-msvc
+
+{% endif %}
+      - name: Setup FVM and Flutter
+        uses: ./.github/actions/setup-fvm
+
+{% if wrapper_type == 'c' %}
+      - name: Install dependencies
+        run: choco install ninja make -y
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1.13.0
+
+      - name: Build for Windows
+        run: make build ARGS="windows" FVM="cmd //c fvm"
+        shell: bash
+{% endif %}
+{% if wrapper_type == 'rust' %}
+      - name: Install make
+        run: choco install make -y
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1.13.0
+
+      - name: Install Protobuf
+        run: choco install protoc -y
+
+      - name: Build for Windows
+        shell: pwsh
+        run: |
+          Write-Host "=== Environment check ==="
+          fvm --version
+          cargo --version
+          Write-Host "=== Starting build ==="
+          # Temporarily rename Git's link.exe to prevent it from shadowing MSVC's link.exe
+          # We can't remove Git\usr\bin from PATH because make needs touch, rm, etc.
+          $gitLink = "C:\Program Files\Git\usr\bin\link.exe"
+          $gitLinkBak = "$gitLink.bak"
+          if (Test-Path $gitLink) {
+            Rename-Item $gitLink $gitLinkBak
+          }
+          try {
+            make build ARGS="windows"
+          } finally {
+            # Restore Git's link.exe
+            if (Test-Path $gitLinkBak) {
+              Rename-Item $gitLinkBak $gitLink
+            }
+          }
+{% endif %}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: {{ package_name }}-windows-x86_64
+          path: bin/windows/{{ lib_windows }}
+
+  # ============================================
+  # Create GitHub Release with all artifacts
+  # ============================================
+  create-release:
+    needs: [read-version, build-linux, build-macos, build-ios, build-android, build-windows]
+    if: needs.read-version.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    env:
+      NATIVE_VERSION: ${{"{{"}} needs.read-version.outputs.version {{"}}"}}
+      NATIVE_BUILD: ${{"{{"}} needs.read-version.outputs.build {{"}}"}}
+      FULL_VERSION: ${{"{{"}} needs.read-version.outputs.full_version {{"}}"}}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release archives
+        run: |
+          FULL_VERSION=${{"{{"}} env.FULL_VERSION {{"}}"}}
+          mkdir -p release-archives
+
+          # Linux x86_64
+          tar -czvf release-archives/{{ package_name }}-${FULL_VERSION}-linux-x86_64.tar.gz \
+            -C artifacts/{{ package_name }}-linux-x86_64 {{ lib_linux }}
+
+          # Linux arm64
+          tar -czvf release-archives/{{ package_name }}-${FULL_VERSION}-linux-arm64.tar.gz \
+            -C artifacts/{{ package_name }}-linux-arm64 {{ lib_linux }}
+
+          # macOS arm64
+          tar -czvf release-archives/{{ package_name }}-${FULL_VERSION}-macos-arm64.tar.gz \
+            -C artifacts/{{ package_name }}-macos-arm64 {{ lib_macos }}
+
+          # macOS x86_64
+          tar -czvf release-archives/{{ package_name }}-${FULL_VERSION}-macos-x86_64.tar.gz \
+            -C artifacts/{{ package_name }}-macos-x86_64 {{ lib_macos }}
+
+          # Windows x86_64 (zip format)
+          cd artifacts/{{ package_name }}-windows-x86_64 && zip ../../release-archives/{{ package_name }}-${FULL_VERSION}-windows-x86_64.zip {{ lib_windows }} && cd ../..
+
+          # Android ABIs
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            tar -czvf release-archives/{{ package_name }}-${FULL_VERSION}-android-${abi}.tar.gz \
+              -C artifacts/{{ package_name }}-android-${abi} {{ lib_android }}
+          done
+
+          # iOS device arm64
+          tar -czvf release-archives/{{ package_name }}-${FULL_VERSION}-ios-device-arm64.tar.gz \
+            -C artifacts/{{ package_name }}-ios-device-arm64 {{ lib_ios }}
+
+          # iOS simulator arm64
+          tar -czvf release-archives/{{ package_name }}-${FULL_VERSION}-ios-simulator-arm64.tar.gz \
+            -C artifacts/{{ package_name }}-ios-simulator-arm64 {{ lib_ios }}
+
+          # iOS simulator x86_64
+          tar -czvf release-archives/{{ package_name }}-${FULL_VERSION}-ios-simulator-x86_64.tar.gz \
+            -C artifacts/{{ package_name }}-ios-simulator-x86_64 {{ lib_ios }}
+
+          # Generate SHA256 checksums
+          cd release-archives
+          sha256sum {{ package_name }}-${FULL_VERSION}-*.* > {{ package_name }}-${FULL_VERSION}-checksums.sha256
+          cd ..
+
+          ls -lh release-archives/
+
+      - name: Create or Update Release
+        env:
+          GH_TOKEN: ${{"{{"}} github.token {{"}}"}}
+        run: |
+          TAG="{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}"
+          TITLE="{{ package_name }} ${{"{{"}} env.NATIVE_VERSION {{"}}"}} (Build ${{"{{"}} env.NATIVE_BUILD {{"}}"}}) - Native Libraries"
+
+          # Delete existing release if it exists (for rebuild scenarios)
+          gh release delete "$TAG" --yes 2>/dev/null || true
+
+          # Create release with all assets
+          gh release create "$TAG" \
+            --title "$TITLE" \
+            --latest \
+            --notes "$(cat <<'EOF'
+          ## {{ package_name }} ${{"{{"}} env.NATIVE_VERSION {{"}}"}} (Build ${{"{{"}} env.NATIVE_BUILD {{"}}"}}) Native Libraries
+
+          Pre-built native libraries for all supported platforms.
+          **These archives are downloaded automatically by Dart Build Hooks.**
+
+          ### Version Info
+          - **{{ native_library_name }} version**: ${{"{{"}} env.NATIVE_VERSION {{"}}"}}
+          - **Build number**: ${{"{{"}} env.NATIVE_BUILD {{"}}"}}
+          - **Full identifier**: ${{"{{"}} env.FULL_VERSION {{"}}"}}
+
+          ### Platforms
+
+          | Platform | Architecture | Archive |
+          |----------|--------------|---------|
+          | Linux | x86_64 | `{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-linux-x86_64.tar.gz` |
+          | Linux | arm64 | `{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-linux-arm64.tar.gz` |
+          | macOS | arm64 | `{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-macos-arm64.tar.gz` |
+          | macOS | x86_64 | `{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-macos-x86_64.tar.gz` |
+          | Windows | x86_64 | `{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-windows-x86_64.zip` |
+          | Android | arm64-v8a | `{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-android-arm64-v8a.tar.gz` |
+          | Android | armeabi-v7a | `{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-android-armeabi-v7a.tar.gz` |
+          | Android | x86_64 | `{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-android-x86_64.tar.gz` |
+          | iOS | device (arm64) | `{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-ios-device-arm64.tar.gz` |
+          | iOS | simulator (arm64) | `{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-ios-simulator-arm64.tar.gz` |
+          | iOS | simulator (x86_64) | `{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-ios-simulator-x86_64.tar.gz` |
+
+          ### Checksums
+          SHA256 checksums are available in `{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-checksums.sha256`
+          EOF
+          )" \
+            release-archives/{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-linux-x86_64.tar.gz \
+            release-archives/{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-linux-arm64.tar.gz \
+            release-archives/{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-macos-arm64.tar.gz \
+            release-archives/{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-macos-x86_64.tar.gz \
+            release-archives/{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-windows-x86_64.zip \
+            release-archives/{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-android-arm64-v8a.tar.gz \
+            release-archives/{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-android-armeabi-v7a.tar.gz \
+            release-archives/{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-android-x86_64.tar.gz \
+            release-archives/{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-ios-device-arm64.tar.gz \
+            release-archives/{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-ios-simulator-arm64.tar.gz \
+            release-archives/{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-ios-simulator-x86_64.tar.gz \
+            release-archives/{{ package_name }}-${{"{{"}} env.FULL_VERSION {{"}}"}}-checksums.sha256

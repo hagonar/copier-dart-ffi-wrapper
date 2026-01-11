@@ -1,0 +1,172 @@
+# Automatically check for new {{ native_library_name }} releases and create PR to update pubspec.yaml
+#
+# This workflow:
+# 1. Runs daily (or manually) to check for new {{ native_library_name }} releases
+# 2. Compares with current {{ package_name }}.native_version in pubspec.yaml
+# 3. If newer version found, updates pubspec.yaml and creates a PR
+# 4. After merge, manual steps are needed (see PR description)
+
+name: Check {{ package_name }} Updates
+
+on:
+  schedule:
+    # Run daily at 09:00 UTC
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+    inputs:
+      force_update:
+        description: 'Force update even if version is the same'
+        required: false
+        default: false
+        type: boolean
+      target_version:
+        description: 'Specific version to update to (leave empty for latest)'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  check-updates:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{"{{"}} vars.APP_ID {{"}}"}}
+          private-key: ${{"{{"}} secrets.APP_PRIVATE_KEY {{"}}"}}
+
+      - uses: actions/checkout@v4
+        with:
+          token: ${{"{{"}} steps.app-token.outputs.token {{"}}"}}
+
+      - name: Setup FVM and Flutter
+        uses: ./.github/actions/setup-fvm
+
+      - name: Check for updates
+        id: check
+        run: |
+          # Build arguments
+          ARGS="--ci"
+
+          if [ -n "${{"{{"}} inputs.target_version {{"}}"}}" ]; then
+            ARGS="$ARGS --version ${{"{{"}} inputs.target_version {{"}}"}}"
+          fi
+
+          if [ "${{"{{"}} inputs.force_update {{"}}"}}" = "true" ]; then
+            ARGS="$ARGS --force"
+          fi
+
+          echo "Running: make check ARGS=\"$ARGS\""
+          make check ARGS="$ARGS" || true
+
+          echo "Check completed. Outputs:"
+          cat $GITHUB_OUTPUT || true
+
+      - name: Update pubspec.yaml
+        if: steps.check.outputs.needs_update == 'true'
+        run: |
+          # Build arguments for update
+          ARGS="--update --ci"
+
+          if [ -n "${{"{{"}} inputs.target_version {{"}}"}}" ]; then
+            ARGS="$ARGS --version ${{"{{"}} inputs.target_version {{"}}"}}"
+          fi
+
+          if [ "${{"{{"}} inputs.force_update {{"}}"}}" = "true" ]; then
+            ARGS="$ARGS --force"
+          fi
+
+          echo "Running: make check ARGS=\"$ARGS\""
+          make check ARGS="$ARGS"
+
+      - name: Create Pull Request
+        if: steps.check.outputs.needs_update == 'true'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{"{{"}} steps.app-token.outputs.token {{"}}"}}
+          sign-commits: true
+          commit-message: |
+            chore(deps): update {{ native_library_name }} native_version to ${{"{{"}} steps.check.outputs.latest_version {{"}}"}}
+          title: "Update {{ native_library_name }} to ${{"{{"}} steps.check.outputs.latest_version {{"}}"}}"
+          body: |
+            ## Automated {{ native_library_name }} Update
+
+            This PR updates the {{ native_library_name }} native library version in pubspec.yaml.
+
+            ### Version Change
+
+            | Component | Old | New |
+            |-----------|-----|-----|
+            | {{ native_library_name }} | ${{"{{"}} steps.check.outputs.current_version {{"}}"}} | ${{"{{"}} steps.check.outputs.latest_version {{"}}"}} |
+
+            ${{"{{"}} steps.check.outputs.is_prerelease == 'true' && '> **Pre-release**: This is a release candidate. Consider waiting for stable release unless you need specific features.' || '' {{"}}"}}
+
+            ### Release Notes
+
+            See [{{ native_library_name }} ${{"{{"}} steps.check.outputs.latest_version {{"}}"}} release notes](${{"{{"}} steps.check.outputs.release_url {{"}}"}})
+
+            ### What Happens After Merge
+
+            1. **Automatic build starts**: The `build-{{ package_name }}.yml` workflow will automatically trigger and build native libraries for all platforms.
+
+            2. **Wait for build completion**: Monitor the [Actions](../../actions) page until the build succeeds and a new Release is published.
+
+            ### Manual Steps (after build completes)
+
+            Once native libraries are published to Releases, complete these steps:
+
+            1. **Regenerate FFI bindings (if API changed):**
+               ```bash
+               make regen
+               ```
+
+            2. **Update README.md badge** (line 9):
+               ```markdown
+               [![{{ native_library_name }}](https://img.shields.io/badge/{{ native_library_name }}-${{"{{"}} steps.check.outputs.latest_version {{"}}"}}-blue.svg)](https://github.com/{{ github_repo }})
+               ```
+
+            3. **Update CHANGELOG.md** with appropriate version entry
+
+            4. **Run tests to verify:**
+               ```bash
+               make test
+               ```
+
+            5. **Commit and push all changes:**
+               ```bash
+               git add .
+               git commit -m "chore: regenerate bindings and update docs for {{ native_library_name }} ${{"{{"}} steps.check.outputs.latest_version {{"}}"}}"
+               git push
+               ```
+
+            ---
+            *This PR was created automatically by the {{ package_name }} update checker.*
+          branch: update-{{ package_name }}-${{"{{"}} steps.check.outputs.latest_version {{"}}"}}
+          delete-branch: true
+          labels: |
+            dependencies
+            automated
+            ${{"{{"}} steps.check.outputs.is_prerelease == 'true' && 'pre-release' || '' {{"}}"}}
+
+      - name: Summary
+        run: |
+          if [ "${{"{{"}} steps.check.outputs.needs_update {{"}}"}}" = "true" ]; then
+            echo "## Update Available" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Current {{ native_library_name }} | ${{"{{"}} steps.check.outputs.current_version {{"}}"}} |" >> $GITHUB_STEP_SUMMARY
+            echo "| New {{ native_library_name }} | ${{"{{"}} steps.check.outputs.latest_version {{"}}"}} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Pre-release | ${{"{{"}} steps.check.outputs.is_prerelease {{"}}"}} |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "A pull request has been created for review." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## Up to Date" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Current version **${{"{{"}} steps.check.outputs.current_version {{"}}"}}** is the latest." >> $GITHUB_STEP_SUMMARY
+          fi

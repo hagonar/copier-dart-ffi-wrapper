@@ -1,0 +1,119 @@
+#!/usr/bin/env dart
+/// Check if a release should be created.
+///
+/// Usage:
+///   dart run scripts/check_release.dart [--ci]
+///
+/// Options:
+///   --ci  Output in CI-friendly format (GitHub Actions outputs)
+///
+/// This script checks if the current native version already has a release.
+/// Used by CI to determine if a new build is needed.
+library;
+
+import 'dart:convert';
+import 'dart:io';
+
+import 'src/common.dart';
+
+void main(List<String> args) async {
+  final isCi = args.contains('--ci');
+  final packageDir = getPackageDir();
+
+  final version = get{{ package_name | to_camel }}Version();
+  final build = await _readNativeBuild(packageDir);
+  final fullVersion = '$version-$build';
+  final releaseTag = '{{ package_name }}-$fullVersion';
+
+  logInfo('Checking release status...');
+  logInfo('Version: $version');
+  logInfo('Build: $build');
+  logInfo('Full version: $fullVersion');
+  logInfo('Release tag: $releaseTag');
+
+  // Check if release already exists on GitHub
+  final releaseExists = await _checkReleaseExists(releaseTag);
+
+  if (isCi) {
+    // Output for GitHub Actions
+    final outputFile = Platform.environment['GITHUB_OUTPUT'];
+    if (outputFile != null) {
+      final file = File(outputFile);
+      await file.writeAsString(
+        'version=$version\n'
+        'build=$build\n'
+        'full_version=$fullVersion\n'
+        'skip=${releaseExists ? 'true' : 'false'}\n',
+        mode: FileMode.append,
+      );
+    }
+
+    if (releaseExists) {
+      logWarn('Release $releaseTag already exists. Skipping build.');
+    } else {
+      logInfo('Release $releaseTag does not exist. Build will proceed.');
+    }
+  } else {
+    if (releaseExists) {
+      logWarn('Release $releaseTag already exists on GitHub.');
+    } else {
+      logInfo('Release $releaseTag does not exist. Ready to build.');
+    }
+  }
+}
+
+Future<String> _readNativeBuild(Directory packageDir) async {
+  final pubspecFile = File('${packageDir.path}/pubspec.yaml');
+  if (!pubspecFile.existsSync()) {
+    return '1';
+  }
+
+  final content = await pubspecFile.readAsString();
+
+  final blockMatch = RegExp(
+    r'^{{ package_name }}:\s*$([\s\S]*?)(?=^\w|\z)',
+    multiLine: true,
+  ).firstMatch(content);
+
+  if (blockMatch == null) {
+    return '1';
+  }
+
+  final block = blockMatch.group(1) ?? '';
+  final buildMatch = RegExp(r'native_build:\s*(\d+)').firstMatch(block);
+
+  return buildMatch?.group(1)?.trim() ?? '1';
+}
+
+Future<bool> _checkReleaseExists(String tag) async {
+  final token = Platform.environment['GITHUB_TOKEN'];
+  if (token == null || token.isEmpty) {
+    logWarn('GITHUB_TOKEN not set. Cannot check release status.');
+    return false;
+  }
+
+  final client = HttpClient();
+  try {
+    final url = Uri.parse(
+      'https://api.github.com/repos/{{ github_repo }}/releases/tags/$tag',
+    );
+    final request = await client.getUrl(url);
+    request.headers.set('Authorization', 'token $token');
+    request.headers.set('Accept', 'application/vnd.github.v3+json');
+    request.headers.set('User-Agent', '{{ package_name }}-build-script');
+
+    final response = await request.close();
+    final body = await response.transform(utf8.decoder).join();
+
+    if (response.statusCode == 200) {
+      return true;
+    } else if (response.statusCode == 404) {
+      return false;
+    } else {
+      logWarn('GitHub API returned ${response.statusCode}: $body');
+      return false;
+    }
+  } finally {
+    client.close();
+  }
+}

@@ -1,0 +1,49 @@
+import 'package:{{ package_name }}/{{ package_name }}.dart';
+import 'package:test/test.dart';
+
+void main() {
+  setUpAll(() {
+    // Initialize the library before running tests
+    // {{ package_name | to_camel }}.init();
+  });
+
+  tearDownAll(() {
+    // Cleanup the library after all tests
+    // {{ package_name | to_camel }}.cleanup();
+  });
+
+  group('{{ package_name | to_camel }} Initialization', () {
+    test('library loads successfully', () {
+      // TODO: Implement initialization test
+      // Example:
+      // expect({{ package_name | to_camel }}Base.isInitialized, isTrue);
+      expect(true, isTrue); // Placeholder
+    });
+
+    test('returns version information', () {
+      // TODO: Implement version test
+      // Example:
+      // final version = {{ package_name | to_camel }}.getVersion();
+      // expect(version, isNotEmpty);
+      expect(true, isTrue); // Placeholder
+    });
+  });
+
+  group('{{ package_name | to_camel }} Core Functionality', () {
+    test('basic operation works', () {
+      // TODO: Implement your core functionality tests
+      // Example:
+      // final result = {{ package_name | to_camel }}.someOperation();
+      // expect(result, isNotNull);
+      expect(true, isTrue); // Placeholder
+    });
+  });
+
+  // TODO: Add more test groups for your library's functionality
+  //
+  // Recommended test structure:
+  // - test/{{ package_name }}_test.dart - Basic initialization and version tests
+  // - test/utils_test.dart - Utility function tests
+  // - test/security_test.dart - Security-related tests (if applicable)
+  // - test/<feature>_test.dart - Feature-specific tests
+}

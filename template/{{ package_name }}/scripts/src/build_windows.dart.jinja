@@ -1,0 +1,158 @@
+/// Build {{ package_name }} for Windows.
+///
+/// Supports x86_64 only.
+library;
+
+import 'dart:io';
+
+import 'common.dart';
+
+/// Build {{ package_name }} for Windows.
+Future<void> buildWindows() async {
+  if (!Platform.isWindows) {
+    throw Exception('Windows build must be run on Windows');
+  }
+
+  printBuildHeader('Windows (x86_64)');
+
+  // Check dependencies
+  logStep('Checking dependencies...');
+  {% if wrapper_type == 'c' %}
+  await requireCommand('cmake');
+  await requireCommand('git');
+
+  // Check for Visual Studio compiler
+  final hasVS = await _checkVisualStudio();
+  if (!hasVS) {
+    logWarn('MSVC compiler (cl.exe) not found in PATH');
+    logWarn('Run this script from "Developer PowerShell for VS"');
+    logWarn('Or run: vcvars64.bat');
+    throw Exception('Visual Studio environment not set up');
+  }
+
+  final useNinja = await commandExists('ninja');
+  logInfo('Build tool: ${useNinja ? 'ninja' : 'MSBuild'}');
+  {% endif %}
+  {% if wrapper_type == 'rust' %}
+  await requireCommand('cargo');
+  await requireCommand('rustup');
+  {% endif %}
+
+  // Get version
+  final version = get{{ package_name | to_camel }}Version();
+  logInfo('{{ native_library_name }} version: $version');
+
+  // Setup directories
+  final packageDir = getPackageDir();
+  final tempDir = getTempBuildDir();
+  final sourceDir = '$tempDir\\{{ native_library_name }}';
+  final outputDir = '${packageDir.path}\\bin\\windows';
+
+  // Clean and create temp directory
+  logStep('Preparing build directory...');
+  await removeDir(tempDir);
+  await ensureDir(tempDir);
+
+  // Clone source
+  logStep('Downloading {{ native_library_name }} $version...');
+  {% if wrapper_type == 'c' %}
+  await gitClone(
+    url: 'https://github.com/YOUR_ORG/{{ native_library_name }}.git',
+    targetDir: sourceDir,
+    branch: version,
+  );
+  {% endif %}
+  {% if wrapper_type == 'rust' %}
+  await cloneLibsignal(targetDir: sourceDir, version: version);
+  {% endif %}
+
+  // Build
+  await ensureDir(outputDir);
+
+  {% if wrapper_type == 'c' %}
+  final buildDir = '$tempDir\\build';
+  await ensureDir(buildDir);
+
+  logStep('Configuring with CMake...');
+  final cmakeArgs = [
+    sourceDir,
+    ...getBaseCMakeArgs(),
+    '-DBUILD_SHARED_LIBS=ON',
+    '-DCMAKE_WINDOWS_EXPORT_ALL_SYMBOLS=ON',
+    if (useNinja) ...['-G', 'Ninja'],
+  ];
+
+  await runCommandOrFail('cmake', cmakeArgs, workingDirectory: buildDir);
+
+  logStep('Building...');
+  if (useNinja) {
+    await runCommandOrFail('ninja', [], workingDirectory: buildDir);
+  } else {
+    await runCommandOrFail('cmake', [
+      '--build',
+      '.',
+      '--config',
+      'Release',
+    ], workingDirectory: buildDir);
+  }
+
+  final dllPath = await _findDll(buildDir);
+  if (dllPath == null) {
+    throw Exception('{{ lib_windows }} not found in build directory');
+  }
+
+  await copyFile(dllPath, '$outputDir\\{{ lib_windows }}');
+  {% endif %}
+  {% if wrapper_type == 'rust' %}
+  const rustTarget = 'x86_64-pc-windows-msvc';
+
+  final libPath = await buildLibsignalFfi(
+    sourceDir: sourceDir,
+    rustTarget: rustTarget,
+  );
+
+  await copyFile(libPath, '$outputDir\\{{ lib_windows }}');
+  {% endif %}
+
+  // Cleanup
+  logStep('Cleaning up...');
+  await removeDir(tempDir);
+
+  // Summary
+  printBuildSummary('Windows x86_64', outputDir);
+}
+
+{% if wrapper_type == 'c' %}
+/// Check if Visual Studio environment is set up.
+Future<bool> _checkVisualStudio() async {
+  try {
+    final result = await Process.run('where', ['cl'], runInShell: true);
+    return result.exitCode == 0;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// Check if a command exists.
+Future<bool> commandExists(String command) async {
+  try {
+    final result = await Process.run('where', [command], runInShell: true);
+    return result.exitCode == 0;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// Find the built DLL in the build directory.
+Future<String?> _findDll(String buildDir) async {
+  final dir = Directory(buildDir);
+
+  await for (final entity in dir.list(recursive: true)) {
+    if (entity is File && entity.path.endsWith('{{ lib_windows }}')) {
+      return entity.path;
+    }
+  }
+
+  return null;
+}
+{% endif %}

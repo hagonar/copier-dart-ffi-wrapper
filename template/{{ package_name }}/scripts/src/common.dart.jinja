@@ -1,0 +1,326 @@
+/// Common utilities for build scripts.
+library;
+
+import 'dart:io';
+
+// =============================================================================
+// ANSI Colors for terminal output
+// =============================================================================
+
+const _reset = '\x1B[0m';
+const _red = '\x1B[31m';
+const _green = '\x1B[32m';
+const _yellow = '\x1B[33m';
+const _blue = '\x1B[34m';
+const _cyan = '\x1B[36m';
+const _bold = '\x1B[1m';
+
+bool get _supportsAnsi =>
+    stdout.supportsAnsiEscapes && !Platform.environment.containsKey('NO_COLOR');
+
+String _colorize(String text, String color) =>
+    _supportsAnsi ? '$color$text$_reset' : text;
+
+void logInfo(String message) => print(_colorize('[INFO] $message', _blue));
+void logStep(String message) => print(_colorize('[STEP] $message', _cyan));
+void logWarn(String message) => print(_colorize('[WARN] $message', _yellow));
+void logWarning(String message) => logWarn(message); // Alias for compatibility
+void logError(String message) => print(_colorize('[ERROR] $message', _red));
+void logSuccess(String message) =>
+    print(_colorize('[SUCCESS] $message', _green));
+
+void logPlatform(String platform, String message) =>
+    print(_colorize('[$platform] $message', _cyan));
+
+void printBuildHeader(String platform) {
+  final separator = '=' * 60;
+  print('');
+  print(_colorize(separator, _bold));
+  print(_colorize('  Building {{ package_name }} for $platform', _bold));
+  print(_colorize(separator, _bold));
+  print('');
+}
+
+void printBuildSummary(String platform, String outputDir) {
+  print('');
+  logSuccess('Build complete for $platform!');
+  logInfo('Output: $outputDir');
+  print('');
+}
+
+// =============================================================================
+// Directory utilities
+// =============================================================================
+
+/// Gets the package root directory.
+Directory getPackageDir() {
+  // Find package root by looking for pubspec.yaml
+  var dir = Directory.current;
+  while (!File('${dir.path}/pubspec.yaml').existsSync()) {
+    final parent = dir.parent;
+    if (parent.path == dir.path) {
+      throw Exception('Could not find package root (pubspec.yaml not found)');
+    }
+    dir = parent;
+  }
+  return dir;
+}
+
+/// Gets a temporary build directory.
+String getTempBuildDir() {
+  final packageDir = getPackageDir();
+  return '${packageDir.path}/temp';
+}
+
+/// Ensures a directory exists.
+Future<void> ensureDir(String path) async {
+  final dir = Directory(path);
+  if (!dir.existsSync()) {
+    await dir.create(recursive: true);
+  }
+}
+
+/// Removes a directory if it exists.
+Future<void> removeDir(String path) async {
+  final dir = Directory(path);
+  if (dir.existsSync()) {
+    await dir.delete(recursive: true);
+  }
+}
+
+/// Copies a file.
+Future<void> copyFile(String source, String destination) async {
+  final sourceFile = File(source);
+  if (!sourceFile.existsSync()) {
+    throw Exception('Source file not found: $source');
+  }
+
+  final destDir = Directory(File(destination).parent.path);
+  if (!destDir.existsSync()) {
+    await destDir.create(recursive: true);
+  }
+
+  await sourceFile.copy(destination);
+}
+
+// =============================================================================
+// Version utilities
+// =============================================================================
+
+/// Gets the {{ package_name }} version from pubspec.yaml.
+String get{{ package_name | to_camel }}Version() {
+  final packageDir = getPackageDir();
+  final pubspecFile = File('${packageDir.path}/pubspec.yaml');
+
+  if (!pubspecFile.existsSync()) {
+    throw Exception('pubspec.yaml not found');
+  }
+
+  final content = pubspecFile.readAsStringSync();
+
+  final blockMatch = RegExp(
+    r'^{{ package_name }}:\s*$([\s\S]*?)(?=^\w|\z)',
+    multiLine: true,
+  ).firstMatch(content);
+
+  if (blockMatch == null) {
+    throw Exception('{{ package_name }}: block not found in pubspec.yaml');
+  }
+
+  final block = blockMatch.group(1) ?? '';
+
+  final versionMatch = RegExp(
+    r'native_version:\s*"?([^"\s\n]+)"?',
+  ).firstMatch(block);
+
+  if (versionMatch == null) {
+    throw Exception('native_version not found in {{ package_name }} block');
+  }
+
+  {% if strip_version_prefix %}
+  final version = versionMatch.group(1)!.trim();
+  return version.startsWith('v') ? version.substring(1) : version;
+  {% endif %}
+  {% if not strip_version_prefix %}
+  return versionMatch.group(1)!.trim();
+  {% endif %}
+}
+
+// =============================================================================
+// Command execution
+// =============================================================================
+
+/// Checks if a command exists in PATH.
+Future<bool> commandExists(String command) async {
+  final result = await Process.run(
+    Platform.isWindows ? 'where' : 'which',
+    [command],
+  );
+  return result.exitCode == 0;
+}
+
+/// Checks if a command is available, throws if not.
+Future<void> requireCommand(String command) async {
+  if (!await commandExists(command)) {
+    throw Exception('Required command not found: $command');
+  }
+}
+
+/// Runs a command and returns the result.
+Future<ProcessResult> runCommand(
+  String command,
+  List<String> args, {
+  String? workingDirectory,
+  Map<String, String>? environment,
+}) async {
+  logInfo('Running: $command ${args.join(' ')}');
+  return Process.run(
+    command,
+    args,
+    workingDirectory: workingDirectory,
+    environment: environment,
+  );
+}
+
+/// Runs a command and throws if it fails.
+Future<void> runCommandOrFail(
+  String command,
+  List<String> args, {
+  String? workingDirectory,
+  Map<String, String>? environment,
+}) async {
+  final result = await runCommand(
+    command,
+    args,
+    workingDirectory: workingDirectory,
+    environment: environment,
+  );
+
+  if (result.exitCode != 0) {
+    print(result.stdout);
+    print(result.stderr);
+    throw Exception('Command failed with exit code ${result.exitCode}');
+  }
+}
+
+// =============================================================================
+// Git utilities
+// =============================================================================
+
+/// Clones a git repository.
+Future<void> gitClone({
+  required String url,
+  required String targetDir,
+  String? branch,
+  int depth = 1,
+}) async {
+  final args = ['clone', '--depth', depth.toString()];
+
+  if (branch != null) {
+    args.addAll(['--branch', branch]);
+  }
+
+  args.addAll([url, targetDir]);
+
+  await runCommandOrFail('git', args);
+}
+
+// =============================================================================
+// Build utilities
+// =============================================================================
+
+{% if wrapper_type == 'c' %}
+/// Gets the appropriate build command (ninja or make).
+Future<String> getBuildCommand() async {
+  // Check for ninja first (faster)
+  try {
+    await requireCommand('ninja');
+    return 'ninja';
+  } catch (_) {
+    // Fall back to make
+    await requireCommand('make');
+    return 'make';
+  }
+}
+
+/// Gets CMake generator arguments.
+Future<List<String>> getCMakeGeneratorArgs() async {
+  try {
+    await requireCommand('ninja');
+    return ['-G', 'Ninja'];
+  } catch (_) {
+    return []; // Default to Unix Makefiles
+  }
+}
+
+/// Gets build arguments for the build tool.
+Future<List<String>> getBuildArgs() async {
+  try {
+    await requireCommand('ninja');
+    return []; // Ninja doesn't need extra args
+  } catch (_) {
+    // Use parallel make
+    final cpuCount = Platform.numberOfProcessors;
+    return ['-j', cpuCount.toString()];
+  }
+}
+
+/// Base CMake arguments for all platforms.
+List<String> getBaseCMakeArgs() {
+  return [
+    '-DCMAKE_BUILD_TYPE=Release',
+    '-DOQS_BUILD_ONLY_LIB=ON',
+    '-DOQS_USE_OPENSSL=OFF',
+  ];
+}
+{% endif %}
+{% if wrapper_type == 'rust' %}
+/// Clones the {{ native_library_name }} repository.
+Future<void> clone{{ native_library_name | to_camel }}({
+  required String targetDir,
+  required String version,
+}) async {
+  await gitClone(
+    url: 'https://github.com/{{ github_repo }}.git',
+    targetDir: targetDir,
+    branch: version,
+  );
+}
+
+/// Builds {{ native_library_name }} FFI library using Cargo.
+///
+/// TODO: Customize this function for your Rust library's build process.
+/// This is a template - modify cargo build arguments as needed.
+Future<String> build{{ native_library_name | to_camel }}Ffi({
+  required String sourceDir,
+  required String rustTarget,
+}) async {
+  logStep('Building for Rust target: $rustTarget');
+
+  // Add target if needed
+  await runCommandOrFail('rustup', ['target', 'add', rustTarget]);
+
+  // Build with cargo
+  final env = Map<String, String>.from(Platform.environment);
+
+  // TODO: Update cargo package name (-p) for your library
+  await runCommandOrFail(
+    'cargo',
+    [
+      'build',
+      '--release',
+      '--target',
+      rustTarget,
+      // '-p', 'your-ffi-package',  // Uncomment and set your FFI package name
+    ],
+    workingDirectory: sourceDir,
+    environment: env,
+  );
+
+  // Return path to built library
+  // TODO: Update library filename for your library
+  final ext = rustTarget.contains('windows') ? 'dll' : (rustTarget.contains('darwin') ? 'dylib' : 'so');
+  final prefix = rustTarget.contains('windows') ? '' : 'lib';
+  return '$sourceDir/target/$rustTarget/release/$prefix{{ native_library_name }}.$ext';
+}
+{% endif %}

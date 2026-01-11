@@ -1,0 +1,69 @@
+name: {{ package_name }}
+description: {{ description }}
+
+version: 1.0.0
+license: {{ license }}
+repository: https://github.com/{{ github_repo }}
+homepage: https://github.com/{{ github_repo }}
+issue_tracker: https://github.com/{{ github_repo }}/issues
+
+# Native library version configuration
+{{ package_name }}:
+  native_version: "{{ native_version }}"
+  native_build: 1
+
+environment:
+  sdk: {{ dart_sdk_version }}
+  flutter: "{{ flutter_sdk_version }}"
+
+dependencies:
+  ffi: ^2.1.4
+  # SHA256 verification for native library downloads
+  crypto: ^3.0.7
+  # Build hooks for automatic native library download
+  hooks: ^1.0.0
+  code_assets: ^1.0.0
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.24.0
+  ffigen: ^20.0.0
+  coverage: ^1.15.0
+
+platforms:
+  android:
+  ios:
+  linux:
+  macos:
+  windows:
+
+topics:
+{% for topic in topics.split(',') | map('trim') %}
+  - {{ topic }}
+{% endfor %}
+
+ffigen:
+  name: {{ package_name | to_camel }}Bindings
+  description: 'Cross-platform bindings for {{ native_library_name }}'
+  output: 'lib/src/bindings/{{ package_name }}_bindings.dart'
+  headers:
+    entry-points:
+      - '{{ header_entry_point }}'
+  compiler-opts:
+    - '-Iheaders'
+  functions:
+    include:
+      - '{{ ffi_prefix }}.*'
+  structs:
+    include:
+      - '{{ ffi_prefix }}.*'
+  enums:
+    include:
+      - '{{ ffi_prefix }}.*'
+  # Generate @Native annotations instead of DynamicLibrary class
+  # asset-id must match CodeAsset registration in hook/build.dart
+  ffi-native:
+    asset-id: 'package:{{ package_name }}/{{ package_name }}'
+  # ignore-source-errors: may be needed if headers have platform-specific constructs
+  ignore-source-errors: true
+  silence-enum-warning: true

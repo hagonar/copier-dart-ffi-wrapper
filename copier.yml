@@ -1,0 +1,313 @@
+# =============================================================================
+# Copier Template: Dart/Flutter FFI Wrapper
+# =============================================================================
+# Copier template for creating Dart/Flutter FFI wrapper packages
+# for native C or Rust libraries with full CI/CD support.
+#
+# Usage:
+#   copier copy https://github.com/djx-y-z/copier-dart-ffi-wrapper my_package
+#
+# Requirements:
+#   pip install copier jinja2-strcase
+# =============================================================================
+
+_min_copier_version: "9.0.0"
+_subdirectory: template
+_templates_suffix: .jinja
+
+# Jinja2 extensions for case conversion
+_jinja_extensions:
+  - jinja2_strcase.StrcaseExtension
+
+# =============================================================================
+# Exclude files conditionally
+# =============================================================================
+_exclude:
+  - copier.yml
+  - copier.yaml
+  - "*.py[co]"
+  - __pycache__
+  - .git
+  - .DS_Store
+  - .svn
+  - "~*"
+  # Exclude Rust-specific files for C wrapper type
+  - "{% if wrapper_type == 'c' %}{{ package_name }}/.github/actions/setup-rust{% endif %}"
+  - "{% if wrapper_type == 'c' %}{{ package_name }}/scripts/setup_build.dart{% endif %}"
+
+# =============================================================================
+# VARIABLES
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Required - Package info
+# -----------------------------------------------------------------------------
+package_name:
+  type: str
+  help: "Package name (lowercase, no spaces, e.g., my_ffi_lib)"
+  validator: >-
+    {% if not package_name %}
+    package_name is required
+    {% elif not (package_name | regex_search('^[a-z][a-z0-9_]*$')) %}
+    Must be lowercase, start with a letter, contain only letters, numbers, underscores. Got: "{{ package_name }}"
+    {% endif %}
+
+description:
+  type: str
+  help: "Package description for pubspec.yaml"
+  validator: "{% if not description %}description is required{% endif %}"
+
+native_library_name:
+  type: str
+  help: "Name of the native library (e.g., mylib, openssl)"
+  validator: "{% if not native_library_name %}native_library_name is required{% endif %}"
+
+github_repo:
+  type: str
+  help: "GitHub repository (username/repo_name)"
+  validator: >-
+    {% if not github_repo %}
+    github_repo is required
+    {% elif not (github_repo | regex_search('^[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+$')) %}
+    Must be in format "username/repo_name". Got: "{{ github_repo }}"
+    {% endif %}
+
+# -----------------------------------------------------------------------------
+# Wrapper type
+# -----------------------------------------------------------------------------
+wrapper_type:
+  type: str
+  help: "Type of native library (C or Rust with C FFI)"
+  choices:
+    - c
+    - rust
+  default: c
+
+# -----------------------------------------------------------------------------
+# Native library version
+# -----------------------------------------------------------------------------
+native_version:
+  type: str
+  help: "Version of the native library (e.g., 0.15.0 or v0.86.9)"
+  validator: "{% if not native_version %}native_version is required{% endif %}"
+
+# -----------------------------------------------------------------------------
+# Library filenames per platform
+# -----------------------------------------------------------------------------
+lib_linux:
+  type: str
+  help: "Linux library filename"
+  default: "lib{{ native_library_name }}.so"
+
+lib_macos:
+  type: str
+  help: "macOS library filename"
+  default: "lib{{ native_library_name }}.dylib"
+
+lib_windows:
+  type: str
+  help: "Windows library filename"
+  default: "{{ native_library_name }}.dll"
+
+lib_android:
+  type: str
+  help: "Android library filename"
+  default: "lib{{ native_library_name }}.so"
+
+lib_ios:
+  type: str
+  help: "iOS library filename"
+  default: "lib{{ native_library_name }}.dylib"
+
+# -----------------------------------------------------------------------------
+# FFI config
+# -----------------------------------------------------------------------------
+ffi_prefix:
+  type: str
+  help: "Function prefix for ffigen (e.g., OQS_, signal_)"
+  validator: "{% if not ffi_prefix %}ffi_prefix is required{% endif %}"
+
+header_entry_point:
+  type: str
+  help: "Header file entry point relative to package root (e.g., headers/oqs/oqs.h)"
+  validator: "{% if not header_entry_point %}header_entry_point is required{% endif %}"
+
+# -----------------------------------------------------------------------------
+# Headers generation (C libraries)
+# -----------------------------------------------------------------------------
+cmake_headers_path:
+  type: str
+  help: "Path to headers after CMake build (relative to build dir). Only for C wrapper."
+  default: "include"
+  when: "{{ wrapper_type == 'c' }}"
+
+cmake_extra_args:
+  type: str
+  help: "Extra CMake arguments. Only for C wrapper."
+  default: ""
+  when: "{{ wrapper_type == 'c' }}"
+
+# -----------------------------------------------------------------------------
+# Headers generation (Rust libraries)
+# -----------------------------------------------------------------------------
+cbindgen_config_path:
+  type: str
+  help: "Path to cbindgen.toml (relative to source root). Only for Rust wrapper."
+  default: "cbindgen.toml"
+  when: "{{ wrapper_type == 'rust' }}"
+
+cbindgen_crate:
+  type: str
+  help: "FFI crate name for cbindgen. Only for Rust wrapper."
+  default: ""
+  when: "{{ wrapper_type == 'rust' }}"
+
+# -----------------------------------------------------------------------------
+# Flutter/Dart versions
+# -----------------------------------------------------------------------------
+flutter_version:
+  type: str
+  help: "Flutter version for FVM"
+  default: "3.38.4"
+
+dart_sdk_version:
+  type: str
+  help: "Dart SDK version constraint"
+  default: "^3.10.0"
+
+flutter_sdk_version:
+  type: str
+  help: "Flutter SDK version constraint"
+  default: ">=3.38.0"
+
+# -----------------------------------------------------------------------------
+# Android config
+# -----------------------------------------------------------------------------
+android_min_sdk:
+  type: str
+  help: "Android minimum SDK version"
+  default: "21"
+
+android_compile_sdk:
+  type: str
+  help: "Android compile SDK version"
+  default: "34"
+
+# -----------------------------------------------------------------------------
+# License
+# -----------------------------------------------------------------------------
+license:
+  type: str
+  help: "Package license"
+  choices:
+    - MIT
+    - AGPL-3.0
+    - Apache-2.0
+    - BSD-3-Clause
+  default: MIT
+
+# -----------------------------------------------------------------------------
+# Topics
+# -----------------------------------------------------------------------------
+topics:
+  type: str
+  help: "Package topics for pub.dev (comma-separated, e.g., cryptography,ffi,native)"
+  default: "ffi,native"
+
+# -----------------------------------------------------------------------------
+# Version prefix handling
+# -----------------------------------------------------------------------------
+strip_version_prefix:
+  type: bool
+  help: "Strip 'v' prefix from native version in archive names"
+  default: false
+
+# -----------------------------------------------------------------------------
+# Computed variables (not shown to user)
+# -----------------------------------------------------------------------------
+current_year:
+  type: str
+  default: "{{ '%Y' | strftime }}"
+  when: false
+
+# =============================================================================
+# POST-GENERATION TASKS
+# =============================================================================
+_tasks:
+  # Create Flutter example app
+  - command: >-
+      flutter create example
+      --platforms=android,ios,linux,macos,windows
+      --project-name {{ package_name }}_example
+    working_directory: "{{ _copier_conf.dst_path }}/{{ package_name }}"
+
+  # Copy template files to example
+  - command: >-
+      cp _templates/example_pubspec.yaml example/pubspec.yaml &&
+      cp _templates/example_main.dart example/lib/main.dart
+    working_directory: "{{ _copier_conf.dst_path }}/{{ package_name }}"
+
+  # Create CLI example app
+  - command: dart create -t console example_cli --force
+    working_directory: "{{ _copier_conf.dst_path }}/{{ package_name }}"
+
+  # Copy template files to example_cli and cleanup
+  - command: >-
+      cp _templates/example_cli_pubspec.yaml example_cli/pubspec.yaml &&
+      cp _templates/example_cli_main.dart example_cli/bin/{{ package_name }}_cli.dart &&
+      rm -f example_cli/bin/example_cli.dart
+    working_directory: "{{ _copier_conf.dst_path }}/{{ package_name }}"
+
+  # Remove _templates directory
+  - command: rm -rf _templates
+    working_directory: "{{ _copier_conf.dst_path }}/{{ package_name }}"
+
+# =============================================================================
+# Messages
+# =============================================================================
+_message_after_copy: |
+
+  FFI wrapper generated successfully!
+
+  Package: {{ package_name }}
+  Type: {{ wrapper_type | upper }} library wrapper
+
+  Next steps:
+
+  1. Navigate to your package directory:
+     cd {{ package_name }}
+
+  2. Add native library license:
+     Copy the license file from the native library to:
+     LICENSE_NATIVE or include in LICENSE
+
+  3. Install dependencies and setup:
+     make setup
+
+  4. Generate FFI bindings (downloads headers automatically):
+     make regen
+
+  5. Implement your Dart API in lib/src/
+
+  6. Update example apps in example/ and example_cli/
+
+  7. Write tests in test/ directory
+     See test/{{ package_name }}_test.dart for template
+
+  8. Run tests:
+     make test
+
+  9. Configure GitHub Actions:
+     - Create GitHub App for signed commits (APP_ID, APP_PRIVATE_KEY)
+     - Setup coverage badge (GIST_TOKEN, COVERAGE_GIST_ID)
+     See README.md for detailed instructions
+
+  For more information, see CLAUDE.md and README.md
+
+_message_after_update: |
+
+  FFI wrapper updated successfully!
+
+  Review the changes and run:
+    make setup
+    make regen

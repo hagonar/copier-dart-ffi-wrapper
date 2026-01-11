@@ -1,0 +1,66 @@
+# Contributing to {{ package_name }}
+
+Thank you for your interest in contributing to {{ package_name }}!
+
+## Getting Started
+
+1. Fork the repository
+2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/{{ package_name }}.git`
+3. Setup development environment: `make setup`
+4. Create a feature branch: `git checkout -b feature/your-feature`
+
+## Development Workflow
+
+### Running Tests
+
+```bash
+make test
+```
+
+### Code Formatting
+
+```bash
+make format
+```
+
+### Static Analysis
+
+```bash
+make analyze
+```
+
+### Coverage Report
+
+```bash
+make coverage
+```
+
+## Pull Request Process
+
+1. Ensure all tests pass: `make test`
+2. Ensure code is formatted: `make format-check`
+3. Ensure no analyzer issues: `make analyze`
+4. Update documentation if needed
+5. Update CHANGELOG.md with your changes
+6. Submit a pull request
+
+## Code Style
+
+- Follow the [Dart Style Guide](https://dart.dev/guides/language/effective-dart/style)
+- Use meaningful variable and function names
+- Add documentation comments for public APIs
+- Write tests for new functionality
+
+## Commit Messages
+
+Use clear, descriptive commit messages:
+
+- `feat: Add new feature`
+- `fix: Fix bug in XYZ`
+- `docs: Update README`
+- `test: Add tests for XYZ`
+- `refactor: Improve code structure`
+
+## Questions?
+
+Feel free to open an issue for questions or discussions.

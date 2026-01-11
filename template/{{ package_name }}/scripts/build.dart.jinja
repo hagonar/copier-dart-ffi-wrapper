@@ -1,0 +1,166 @@
+#!/usr/bin/env dart
+/// Build script for {{ package_name }} native libraries.
+///
+/// Usage:
+///   dart run scripts/build.dart <platform> [options]
+///
+/// Platforms:
+///   macos    - Build for macOS
+///   ios      - Build for iOS
+///   android  - Build for Android
+///   linux    - Build for Linux
+///   windows  - Build for Windows
+///   all      - Build for all platforms
+///   list     - List available platforms
+///
+/// Examples:
+///   dart run scripts/build.dart macos --arch arm64
+///   dart run scripts/build.dart android --abi arm64-v8a
+///   dart run scripts/build.dart ios --target device
+library;
+
+import 'dart:io';
+
+import 'src/build_android.dart' as android;
+import 'src/build_ios.dart' as ios;
+import 'src/build_linux.dart' as linux;
+import 'src/build_macos.dart' as macos;
+import 'src/build_windows.dart' as windows;
+import 'src/common.dart';
+
+void main(List<String> args) async {
+  if (args.isEmpty) {
+    _printUsage();
+    exit(1);
+  }
+
+  final platform = args[0].toLowerCase();
+  final options = args.sublist(1);
+
+  try {
+    switch (platform) {
+      case 'macos':
+        await _buildMacOS(options);
+      case 'ios':
+        await _buildIOS(options);
+      case 'android':
+        await _buildAndroid(options);
+      case 'linux':
+        await _buildLinux(options);
+      case 'windows':
+        await _buildWindows(options);
+      case 'all':
+        await _buildAll(options);
+      case 'list':
+        _listPlatforms();
+      default:
+        logError('Unknown platform: $platform');
+        _printUsage();
+        exit(1);
+    }
+  } catch (e) {
+    logError('Build failed: $e');
+    exit(1);
+  }
+}
+
+void _printUsage() {
+  print('''
+Usage: dart run scripts/build.dart <platform> [options]
+
+Platforms:
+  macos    - Build for macOS
+  ios      - Build for iOS
+  android  - Build for Android
+  linux    - Build for Linux
+  windows  - Build for Windows
+  all      - Build for all platforms (current OS only)
+  list     - List available platforms
+
+Options:
+  --arch <arch>     Architecture (arm64, x86_64, universal)
+  --abi <abi>       Android ABI (arm64-v8a, armeabi-v7a, x86_64)
+  --target <target> iOS target (device, simulator-arm64, simulator-x86_64)
+
+Examples:
+  dart run scripts/build.dart macos --arch arm64
+  dart run scripts/build.dart android --abi arm64-v8a
+  dart run scripts/build.dart ios --target device
+''');
+}
+
+void _listPlatforms() {
+  print('Available platforms:');
+  print('  macos   - macOS (arm64, x86_64, universal)');
+  print('  ios     - iOS (device, simulator-arm64, simulator-x86_64)');
+  print('  android - Android (arm64-v8a, armeabi-v7a, x86_64)');
+  print('  linux   - Linux (x86_64, arm64)');
+  print('  windows - Windows (x86_64)');
+}
+
+Future<void> _buildMacOS(List<String> options) async {
+  final arch = _parseArch(options);
+  await macos.buildMacOS(arch: macos.parseArch(arch));
+}
+
+Future<void> _buildIOS(List<String> options) async {
+  final target = _parseTarget(options);
+  await ios.buildIOS(target: ios.parseTarget(target));
+}
+
+Future<void> _buildAndroid(List<String> options) async {
+  final abi = _parseAbi(options);
+  await android.buildAndroid(abi: android.parseAbi(abi));
+}
+
+Future<void> _buildLinux(List<String> options) async {
+  final arch = _parseArch(options);
+  await linux.buildLinux(arch: linux.parseArch(arch));
+}
+
+Future<void> _buildWindows(List<String> options) async {
+  await windows.buildWindows();
+}
+
+Future<void> _buildAll(List<String> options) async {
+  logInfo('Building for all platforms on current OS...');
+
+  if (Platform.isMacOS) {
+    await _buildMacOS(['--arch', 'universal']);
+    await _buildIOS(['--target', 'device']);
+    await _buildIOS(['--target', 'simulator-arm64']);
+  } else if (Platform.isLinux) {
+    await _buildLinux(['--arch', 'x86_64']);
+    await _buildAndroid(['--abi', 'arm64-v8a']);
+    await _buildAndroid(['--abi', 'armeabi-v7a']);
+    await _buildAndroid(['--abi', 'x86_64']);
+  } else if (Platform.isWindows) {
+    await _buildWindows([]);
+  }
+
+  logInfo('All builds complete!');
+}
+
+String? _parseArch(List<String> options) {
+  final index = options.indexOf('--arch');
+  if (index != -1 && index + 1 < options.length) {
+    return options[index + 1];
+  }
+  return null;
+}
+
+String? _parseAbi(List<String> options) {
+  final index = options.indexOf('--abi');
+  if (index != -1 && index + 1 < options.length) {
+    return options[index + 1];
+  }
+  return null;
+}
+
+String? _parseTarget(List<String> options) {
+  final index = options.indexOf('--target');
+  if (index != -1 && index + 1 < options.length) {
+    return options[index + 1];
+  }
+  return null;
+}

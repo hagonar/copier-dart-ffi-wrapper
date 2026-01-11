@@ -1,0 +1,119 @@
+# {{ package_name }}
+
+{{ description }}
+
+## Features
+
+- Cross-platform support: Android, iOS, macOS, Linux, Windows
+- Automatic native library download via build hooks
+- SHA256 checksum verification for supply chain security
+- Pure Dart FFI implementation (no platform channels)
+
+## Installation
+
+Add `{{ package_name }}` to your `pubspec.yaml`:
+
+```yaml
+dependencies:
+  {{ package_name }}: ^x.x.x
+```
+
+Then run:
+
+```bash
+flutter pub get
+```
+
+The native libraries will be downloaded automatically during the build process.
+
+## Usage
+
+```dart
+import 'package:{{ package_name }}/{{ package_name }}.dart';
+
+void main() {
+  // TODO: Add usage example
+}
+```
+
+## Platform Support
+
+| Platform | Architecture | Status |
+|----------|--------------|--------|
+| Android  | arm64-v8a    | ✅ |
+| Android  | armeabi-v7a  | ✅ |
+| Android  | x86_64       | ✅ |
+| iOS      | arm64        | ✅ |
+| iOS Sim  | arm64        | ✅ |
+| iOS Sim  | x86_64       | ✅ |
+| macOS    | arm64        | ✅ |
+| macOS    | x86_64       | ✅ |
+| Linux    | x86_64       | ✅ |
+| Linux    | arm64        | ✅ |
+| Windows  | x86_64       | ✅ |
+
+## Development
+
+### Prerequisites
+
+- [Flutter](https://flutter.dev/docs/get-started/install) ({{ flutter_sdk_version }})
+- [FVM](https://fvm.app/) (recommended for version management)
+- Make (for build commands)
+
+### Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/{{ github_repo }}.git
+cd {{ package_name }}
+
+# Setup development environment
+make setup
+
+# Run tests
+make test
+
+# See all available commands
+make help
+```
+
+### Building Native Libraries
+
+Native libraries are pre-built and downloaded automatically via build hooks.
+If you need to build them locally:
+
+```bash
+# Build for current platform
+make build ARGS="<platform>"
+
+# Examples:
+make build ARGS="macos --arch arm64"
+make build ARGS="linux --arch x86_64"
+make build ARGS="android --abi arm64-v8a"
+```
+
+### Regenerating FFI Bindings
+
+After modifying header files:
+
+```bash
+make regen
+```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for security policy and reporting vulnerabilities.
+
+## License
+
+This project is licensed under the {{ license }} License - see the [LICENSE](LICENSE) file for details.
+
+## Acknowledgments
+
+- [{{ native_library_name }}](https://github.com/{{ github_repo }}) - Native library
+- [dart:ffi](https://dart.dev/guides/libraries/c-interop) - Dart FFI support
+- [ffigen](https://pub.dev/packages/ffigen) - FFI binding generation
