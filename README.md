@@ -1,5 +1,8 @@
 # copier-dart-ffi-wrapper
 
+[![GitHub release](https://img.shields.io/github/v/release/djx-y-z/copier-dart-ffi-wrapper)](https://github.com/djx-y-z/copier-dart-ffi-wrapper/releases)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A Copier template for generating Flutter/Dart FFI wrapper packages with full CI/CD support.
 
 ## Features
@@ -45,7 +48,8 @@ copier update
 | `description` | Package description | `Dart bindings for MyLib` |
 | `wrapper_type` | Native library type (`c` or `rust`) | `c` |
 | `native_library_name` | Native library name | `mylib` |
-| `github_repo` | GitHub repository path | `user/repo` |
+| `github_repo` | GitHub repository of your wrapper package | `user/my_ffi_lib` |
+| `native_repo` | GitHub repository of native library | `original/mylib` |
 | `native_version` | Native library version | `0.15.0` |
 | `ffi_prefix` | Function prefix for ffigen | `MY_` |
 | `header_entry_point` | Header file path (for ffigen) | `headers/mylib.h` |
@@ -53,6 +57,7 @@ copier update
 | `cmake_extra_args` | Extra CMake arguments (C only) | `-DBUILD_SHARED_LIBS=ON` |
 | `cbindgen_config_path` | Path to cbindgen.toml (Rust only) | `cbindgen.toml` |
 | `cbindgen_crate` | Crate name for cbindgen (Rust only) | `libsignal-ffi` |
+| `needs_header_fixes` | Include `_fixHeaders()` function template | `true` |
 | `flutter_version` | Flutter version for FVM | `3.38.4` |
 | `license` | License type | `MIT` |
 | `strip_version_prefix` | Strip 'v' from version tags | `true` |

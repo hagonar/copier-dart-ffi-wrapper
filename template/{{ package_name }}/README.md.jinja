@@ -1,5 +1,12 @@
 # {{ package_name }}
 
+[![pub package](https://img.shields.io/pub/v/{{ package_name }}.svg)](https://pub.dev/packages/{{ package_name }})
+[![CI](https://github.com/{{ github_repo }}/actions/workflows/test.yml/badge.svg)](https://github.com/{{ github_repo }}/actions/workflows/test.yml)
+[![License](https://img.shields.io/badge/license-{{ license | replace('-', '--') }}-blue.svg)](LICENSE)
+[![Dart](https://img.shields.io/badge/dart-%3E%3D3.10.0-brightgreen.svg)](https://dart.dev)
+[![Flutter](https://img.shields.io/badge/flutter-%3E%3D3.38.0-blue.svg)](https://flutter.dev)
+[![{{ native_library_name }}](https://img.shields.io/badge/{{ native_library_name }}-{{ native_version | replace('-', '--') }}-orange.svg)](https://github.com/{{ native_repo }})
+
 {{ description }}
 
 ## Features
@@ -108,12 +115,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 See [SECURITY.md](SECURITY.md) for security policy and reporting vulnerabilities.
 
+**Note:** Update SECURITY.md with your contact information for vulnerability reports.
+
 ## License
 
 This project is licensed under the {{ license }} License - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
-- [{{ native_library_name }}](https://github.com/{{ github_repo }}) - Native library
+- [{{ native_library_name }}](https://github.com/{{ native_repo }}) - Native library
 - [dart:ffi](https://dart.dev/guides/libraries/c-interop) - Dart FFI support
 - [ffigen](https://pub.dev/packages/ffigen) - FFI binding generation

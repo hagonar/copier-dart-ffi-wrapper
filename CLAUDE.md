@@ -29,10 +29,12 @@ copier-dart-ffi-wrapper/
 | `description` | string | Package description |
 | `wrapper_type` | enum (c/rust) | Native library type |
 | `native_library_name` | string | Name of native library |
-| `github_repo` | string | GitHub repository path |
+| `github_repo` | string | GitHub repository of wrapper package |
+| `native_repo` | string | GitHub repository of native library |
 | `native_version` | string | Native library version |
 | `ffi_prefix` | string | Function prefix for ffigen |
 | `header_entry_point` | string | Header file path |
+| `needs_header_fixes` | boolean | Include _fixHeaders() function template |
 | `license` | enum | Package license |
 | `strip_version_prefix` | boolean | Strip 'v' from version tags |
 
@@ -62,6 +64,7 @@ copier copy . /tmp/test_c \
   --data description="Test C wrapper" \
   --data native_library_name=testlib \
   --data github_repo=user/test_c \
+  --data native_repo=original/testlib \
   --data wrapper_type=c \
   --data native_version=1.0.0 \
   --data ffi_prefix=TEST_ \
@@ -77,6 +80,7 @@ copier copy . /tmp/test_rust \
   --data description="Test Rust wrapper" \
   --data native_library_name=testlib \
   --data github_repo=user/test_rust \
+  --data native_repo=original/testlib \
   --data wrapper_type=rust \
   --data native_version=v1.0.0 \
   --data ffi_prefix=test_ \
@@ -135,7 +139,7 @@ brew install copier && pip install jinja2-strcase
 
 ```bash
 # Quick test
-copier copy . /tmp/test --trust --defaults --data package_name=test --data description=Test --data native_library_name=lib --data github_repo=u/r --data wrapper_type=c --data native_version=1.0 --data ffi_prefix=X_ --data header_entry_point=h/x.h
+copier copy . /tmp/test --trust --defaults --data package_name=test --data description=Test --data native_library_name=lib --data github_repo=u/r --data native_repo=o/lib --data wrapper_type=c --data native_version=1.0 --data ffi_prefix=X_ --data header_entry_point=h/x.h
 
 # Check generated files
 ls -la /tmp/test/test/

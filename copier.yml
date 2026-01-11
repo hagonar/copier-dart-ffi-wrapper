@@ -64,12 +64,22 @@ native_library_name:
 
 github_repo:
   type: str
-  help: "GitHub repository (username/repo_name)"
+  help: "GitHub repository of your wrapper package (username/repo_name)"
   validator: >-
     {% if not github_repo %}
     github_repo is required
     {% elif not (github_repo | regex_search('^[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+$')) %}
     Must be in format "username/repo_name". Got: "{{ github_repo }}"
+    {% endif %}
+
+native_repo:
+  type: str
+  help: "GitHub repository of the native library (username/repo_name, e.g., open-quantum-safe/liboqs)"
+  validator: >-
+    {% if not native_repo %}
+    native_repo is required
+    {% elif not (native_repo | regex_search('^[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+$')) %}
+    Must be in format "username/repo_name". Got: "{{ native_repo }}"
     {% endif %}
 
 # -----------------------------------------------------------------------------
@@ -161,6 +171,14 @@ cbindgen_crate:
   help: "FFI crate name for cbindgen. Only for Rust wrapper."
   default: ""
   when: "{{ wrapper_type == 'rust' }}"
+
+# -----------------------------------------------------------------------------
+# Header fixes
+# -----------------------------------------------------------------------------
+needs_header_fixes:
+  type: bool
+  help: "Include _fixHeaders() function template for fixing header issues (cyclic includes, platform-specific issues, etc.)"
+  default: true
 
 # -----------------------------------------------------------------------------
 # Flutter/Dart versions
@@ -275,7 +293,7 @@ _message_after_copy: |
   Next steps:
 
   1. Navigate to your package directory:
-     cd {{ package_name }}
+     cd {{ _copier_conf.dst_path }}/{{ package_name }}
 
   2. Add native library license:
      Copy the license file from the native library to:
@@ -287,6 +305,10 @@ _message_after_copy: |
   4. Generate FFI bindings (downloads headers automatically):
      make regen
 
+     Note: If your native library has header issues (cyclic includes,
+     platform-specific issues, etc.), customize _fixHeaders() in
+     scripts/regenerate_bindings.dart
+
   5. Implement your Dart API in lib/src/
 
   6. Update example apps in example/ and example_cli/
@@ -297,10 +319,15 @@ _message_after_copy: |
   8. Run tests:
      make test
 
-  9. Configure GitHub Actions:
-     - Create GitHub App for signed commits (APP_ID, APP_PRIVATE_KEY)
-     - Setup coverage badge (GIST_TOKEN, COVERAGE_GIST_ID)
-     See README.md for detailed instructions
+  9. Customize package metadata:
+     - Update topics in pubspec.yaml if needed
+     - Add topics in GitHub repository settings
+     - Review and update SECURITY.md with your contact information
+
+  10. Configure GitHub Actions:
+      - Create GitHub App for signed commits (APP_ID, APP_PRIVATE_KEY)
+      - Setup coverage badge (GIST_TOKEN, COVERAGE_GIST_ID)
+      See README.md for detailed instructions
 
   For more information, see CLAUDE.md and README.md
 

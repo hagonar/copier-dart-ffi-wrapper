@@ -70,7 +70,7 @@ void main(List<String> args) async {
     await _generateHeadersWithCbindgen();
 {% endif %}
     await _copyHeaders();
-{% if wrapper_type == 'c' %}
+{% if needs_header_fixes %}
     await _fixHeaders();
 {% endif %}
     await _generateBindings();
@@ -149,7 +149,7 @@ Future<void> _downloadSource(String version) async {
   await ensureDir(_tempDir!);
 
   await gitClone(
-    url: 'https://github.com/{{ github_repo }}.git',
+    url: 'https://github.com/{{ native_repo }}.git',
     targetDir: _sourceDir!,
     branch: version,
   );
@@ -292,7 +292,7 @@ Future<void> _copyHeaders() async {
 {% endif %}
 }
 
-{% if wrapper_type == 'c' %}
+{% if needs_header_fixes %}
 /// Fix headers (e.g., cyclic includes)
 ///
 /// TODO: Customize this function if your library has specific header issues.
